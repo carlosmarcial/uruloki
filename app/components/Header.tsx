@@ -14,7 +14,7 @@ import Marquee from "./MarqueeAnimation";
 export default function Header() {
   return (
     <header className="flex flex-wrap items-center justify-between p-4 pt-6 px-6 sm:px-12 bg-transparent">
-      <div className="flex items-center space-x-4 mb-2 sm:mb-0 transition-transform duration-300 ease-in-out hover:scale-105"> {/* Added hover effect */}
+      <div className="flex items-center space-x-4 mb-2 sm:mb-0 transition-transform duration-300 ease-in-out hover:scale-105">
         <Image src="/logo.svg" alt="Uruloki Logo" width={30} height={30} />
         <span className="text-xl font-bold">URULOKI</span>
       </div>

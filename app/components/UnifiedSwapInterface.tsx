@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useAccount, useBalance, useChainId, useConnect, useDisconnect } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { ConnectKitButton } from "connectkit";
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { formatUnits, parseUnits } from "ethers";
 import { useReadContract, useSimulateContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { erc20Abi, Address } from "viem";
@@ -18,16 +18,6 @@ import TokenSelector from '../token-list/TokenSelector';
 import { fetchTokenList } from '../../lib/fetchTokenList';
 import { Token } from '../../types/token';
 import { isAddress } from 'ethers';
-
-// Add this interface at the top of your file, after the imports
-interface Token {
-  name: string;
-  symbol: string;
-  address: string;
-  decimals: number;
-  logoURI?: string;
-  chainId: number;
-}
 
 // Define custom tokens
 const TSUKA: Token = {
@@ -88,8 +78,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   useEffect(() => {
     const loadTokens = async () => {
       if (activeChain === 'ethereum') {
-        const fetchedTokens = await fetchTokenList();
-        const ethereumTokens = fetchedTokens.filter(token => token.chainId === 1);
+        const fetchedTokens = await fetchTokenList(chainId);
+        const ethereumTokens = fetchedTokens.filter(token => token.chainId === chainId);
         
         // Fetch prices for Ethereum tokens
         const tokensWithPrices = await Promise.all(ethereumTokens.map(async (token) => {
@@ -119,7 +109,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     };
 
     loadTokens();
-  }, [activeChain]);
+  }, [activeChain, chainId]);
 
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -319,7 +309,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   return (
     <div className="flex flex-col xl:flex-row gap-4 w-full pt-0 px-4 pb-6 max-w-[1400px] mx-auto justify-center">
-      <div className="w-full xl:w-[58%] bg-gray-800 rounded-lg overflow-hidden" style={{ height: '500px' }}>
+      <div className="w-full xl:w-[58%] bg-gray-800 rounded-lg overflow-hidden" style={{ height: '550px' }}>
         <div className="p-3 text-white flex items-center justify-between">
           <button
             onClick={handleAnalyze}
@@ -330,34 +320,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           </button>
         </div>
         <div className="h-[calc(100%-52px)]">
-          {buyToken && <TokenChart ref={chartRef} key={buyToken.symbol} token={buyToken} onScreenshot={handleScreenshot} />}
+          {buyToken && <TokenChart ref={chartRef} token={buyToken} onScreenshot={handleScreenshot} />}
         </div>
       </div>
-      <div className="w-full xl:w-[32%] bg-gray-800 rounded-lg p-6 text-white" style={{ height: '500px' }}>
-        <div className="h-full flex flex-col">
-          <motion.div 
-            variants={itemVariants} 
-            initial="hidden"
-            animate="visible"
-            className="flex justify-end mb-6"
-          >
-            {activeChain === 'ethereum' ? (
-              <ConnectKitButton.Custom>
-                {({ isConnected, show, truncatedAddress, ensName }) => {
-                  return (
-                    <button
-                      onClick={show}
-                      className="bg-[#efb71b] hover:bg-[#d6a118] transition-colors rounded-md py-2 px-4 text-black font-semibold text-sm"
-                    >
-                      {isConnected ? (ensName ?? truncatedAddress) : 'Connect Wallet'}
-                    </button>
-                  );
-                }}
-              </ConnectKitButton.Custom>
-            ) : (
-              <WalletMultiButton className="!bg-[#efb71b] hover:!bg-[#d6a118] !text-black !py-2 !px-4 !rounded-md !font-semibold !text-sm" />
-            )}
-          </motion.div>
+      <div className="w-full xl:w-[32%] bg-gray-800 rounded-lg p-6 text-white flex flex-col" style={{ height: '550px' }}>
+        <div className="flex justify-end mb-4">
+          <ConnectButton />
+        </div>
+        <div className="flex-grow flex flex-col">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeChain}
@@ -365,7 +335,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="flex flex-col flex-grow"
+              className="flex flex-col h-full"
             >
               <motion.div variants={itemVariants} className="mb-4">
                 <TokenInput
@@ -406,19 +376,19 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             </motion.div>
           </AnimatePresence>
         </div>
-        {modalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleOutsideClick}>
-            <TokenModal
-              ref={modalRef}
-              closeModal={closeModal}
-              tokens={tokens}
-              selectToken={selectToken}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-            />
-          </div>
-        )}
       </div>
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleOutsideClick}>
+          <TokenModal
+            ref={modalRef}
+            closeModal={closeModal}
+            tokens={tokens}
+            selectToken={selectToken}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+          />
+        </div>
+      )}
       {/* Analyze Modal */}
       {isAnalyzeModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -547,8 +517,8 @@ const TokenModal = React.forwardRef<HTMLDivElement, {
       } else {
         // Search by name or symbol
         const filtered = tokens.filter((token) =>
-          (token.name as string).toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (token.symbol as string).toLowerCase().includes(searchQuery.toLowerCase())
+          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          token.symbol.toLowerCase().includes(searchQuery.toLowerCase())
         );
         setFilteredTokens(filtered);
       }

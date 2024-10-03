@@ -19,13 +19,14 @@ interface TokenChartProps {
 
 export interface TokenChartRef {
   takeScreenshot: () => void;
+  getChartData: () => Promise<any>;
 }
 
 const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreenshot }, ref) => {
   const [chartSymbol, setChartSymbol] = useState('MEXC:TSUKAUSDT');
   const [chartKey, setChartKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const widgetRef = useRef(null);
+  const widgetRef = useRef<any>(null);
 
   useEffect(() => {
     if (token.symbol === 'TSUKA') {
@@ -41,7 +42,6 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
       if (containerRef.current) {
         const iframe = containerRef.current.querySelector('iframe');
         if (iframe) {
-          // Send a message to the iframe to request a screenshot
           iframe.contentWindow?.postMessage({ action: 'takeScreenshot' }, '*');
         } else {
           console.error("Iframe not found");
@@ -66,7 +66,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
               includeTime: true,
               includeSeries: true,
               includeStudies: true,
-            }).then((data) => {
+            }).then((data: any) => {
               resolve({
                 symbol: symbolInfo.name,
                 timeframe: resolution,
@@ -103,7 +103,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
           symbol={chartSymbol}
           theme="dark"
           autosize
-          interval="D"
+          interval="60"
           timezone="Etc/UTC"
           style="1"
           locale="en"
@@ -111,14 +111,16 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
           enable_publishing={false}
           allow_symbol_change={false}
           container_id={`tradingview_chart_${chartKey}`}
-          hide_side_toolbar={false}
+          hide_side_toolbar={true} // Changed to true to hide the sidebar
           hide_legend={false}
           withdateranges={false}
           range="1M"
           studies={[
             "MASimple@tv-basicstudies",
-            "RSI@tv-basicstudies"
+            "RSI@tv-basicstudies",
+            "Volume@tv-basicstudies"
           ]}
+          ref={widgetRef}
         />
       </div>
     </div>
@@ -128,3 +130,4 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
 TokenChart.displayName = 'TokenChart';
 
 export default TokenChart;
+

@@ -5,7 +5,5 @@ export interface Token {
   decimals: number;
   logoURI?: string;
   chainId: number;
-  balance?: number;
   price?: number;
-  logo?: string;
 }

@@ -1,73 +1,30 @@
-import { Address, type Hex } from "viem";
-import { EIP712TypedData } from "./signature";
+import { Address, Hex } from 'viem';
 
-// This interface is subject to change as the API V2 endpoints aren't finalized.
 export interface PriceResponse {
-  sellToken: string;
-  buyToken: string;
-  sellAmount: string;
-  buyAmount: string;
-  grossSellAmount: string;
-  grossBuyAmount: string;
-  allowanceTarget: Address;
-  route: [];
-  fees: {
-    integratorFee: {
-      amount: string;
-      token: string;
-      type: "volume" | "gas";
-    } | null;
-    zeroExFee: {
-      billingType: "on-chain" | "off-chain";
-      feeAmount: string;
-      feeToken: Address;
-      feeType: "volume" | "gas";
-    };
-    gasFee: null;
-  } | null;
-  gas: string;
-  gasPrice: string;
-  auxiliaryChainData?: {
-    l1GasEstimate?: number;
-  };
-}
-
-// This interface is subject to change as the API V2 endpoints aren't finalized.
-export interface QuoteResponse {
   sellToken: Address;
   buyToken: Address;
   sellAmount: string;
   buyAmount: string;
+  estimatedPriceImpact: string;
   grossSellAmount: string;
   grossBuyAmount: string;
-  gasPrice: string;
   allowanceTarget: Address;
-  route: [];
   fees: {
     integratorFee: {
       amount: string;
-      token: string;
-      type: "volume" | "gas";
+      token: Address;
+      type: 'volume' | 'gas';
     } | null;
     zeroExFee: {
-      billingType: "on-chain" | "off-chain";
+      billingType: 'on-chain' | 'off-chain';
       feeAmount: string;
       feeToken: Address;
-      feeType: "volume" | "gas";
+      feeType: 'volume' | 'gas';
     };
     gasFee: null;
-  } | null;
-  auxiliaryChainData: {};
-  to: Address;
-  data: Hex;
-  value: string;
-  gas: string;
-  permit2: {
-    type: "Permit2";
-    hash: Hex;
-    eip712: EIP712TypedData;
   };
-  transaction: V2QuoteTransaction;
+  gas: string;
+  gasPrice: string;
   tokenMetadata: {
     buyToken: {
       buyTaxBps: string | null;
@@ -80,10 +37,50 @@ export interface QuoteResponse {
   };
 }
 
-export interface V2QuoteTransaction {
-  data: Hex;
-  gas: string | null;
+export interface QuoteResponse {
+  sellToken: Address;
+  buyToken: Address;
+  sellAmount: string;
+  buyAmount: string;
+  grossSellAmount: string;
+  grossBuyAmount: string;
   gasPrice: string;
-  to: Address;
-  value: string;
+  allowanceTarget: Address;
+  fees: {
+    integratorFee: {
+      amount: string;
+      token: Address;
+      type: 'volume' | 'gas';
+    } | null;
+    zeroExFee: {
+      billingType: 'on-chain' | 'off-chain';
+      feeAmount: string;
+      feeToken: Address;
+      feeType: 'volume' | 'gas';
+    };
+    gasFee: null;
+  };
+  transaction: {
+    to: Address;
+    from: Address;
+    data: Hex;
+    value: string;
+    gas: string;
+    gasPrice: string;
+  };
+  permit2: {
+    type: 'Permit2';
+    hash: Hex;
+    eip712: any; // You might want to define a more specific type for eip712
+  };
+  tokenMetadata: {
+    buyToken: {
+      buyTaxBps: string | null;
+      sellTaxBps: string | null;
+    };
+    sellToken: {
+      buyTaxBps: string | null;
+      sellTaxBps: string | null;
+    };
+  };
 }

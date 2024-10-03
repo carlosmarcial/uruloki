@@ -9,7 +9,7 @@ const MainTrading = dynamic(() => import("./components/MainTrading"), { ssr: fal
 
 export default function Home() {
   return (
-    <div className="flex flex-col min-h-screen bg-[#0D0D0D]"> {/* Updated to a very dark gray */}
+    <div className="flex flex-col min-h-screen bg-[#0D0D0D]">
       <ModelPreloader />
       <Header />
       <MainTrading />

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { motion } from 'framer-motion';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera } from '@react-three/drei';
 import { EffectComposer, Bloom, ChromaticAberration } from '@react-three/postprocessing';
