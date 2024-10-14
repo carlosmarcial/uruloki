@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import '@rainbow-me/rainbowkit/styles.css';
 import { WagmiProvider } from 'wagmi';
-import { mainnet, polygon, optimism, arbitrum, base } from 'wagmi/chains';
+import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll } from 'wagmi/chains';
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import ModelPreloader from '@app/components/ModelPreloader';
 
@@ -20,7 +20,7 @@ declare global {
 const config = getDefaultConfig({
   appName: 'Uruloki',
   projectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
-  chains: [mainnet, polygon, optimism, arbitrum, base],
+  chains: [mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll],
   ssr: true, // Enable server-side rendering mode
 });
 
@@ -31,6 +31,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider chains={config.chains}>
+          <ModelPreloader />
           {children}
         </RainbowKitProvider>
       </QueryClientProvider>

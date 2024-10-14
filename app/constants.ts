@@ -1,4 +1,4 @@
-import { mainnet, polygon, optimism, arbitrum, base } from 'wagmi/chains';
+import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll } from 'wagmi/chains';
 import { Address } from 'viem';
 
 export const MAGIC_CALLDATA_STRING = "f".repeat(130); // used when signing the eip712 message
@@ -65,7 +65,18 @@ export const MAINNET_TOKENS_BY_ADDRESS: Record<string, Token> = MAINNET_TOKENS.r
   return acc;
 }, {} as Record<string, Token>);
 
-export const SUPPORTED_CHAINS = [mainnet, polygon, optimism, arbitrum, base];
+export const SUPPORTED_CHAINS = [
+  mainnet,
+  polygon,
+  optimism,
+  arbitrum,
+  base,
+  avalanche,
+  bsc,
+  linea,
+  mantle,
+  scroll
+];
 
 export const TOKEN_LIST_URL = 'https://tokens.coingecko.com/uniswap/all.json';
 
@@ -84,6 +95,11 @@ export const EXCHANGE_PROXY_ADDRESSES: { [chainId: number]: string } = {
   10: '0xdef1abe32c034e558cdd535791643c58a13acc10', // Optimism
   42161: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // Arbitrum
   8453: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // Base
+  43114: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // Avalanche
+  56: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // BSC
+  59144: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // Linea
+  5000: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // Mantle
+  534352: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // Scroll
 };
 
 export const EXCHANGE_PROXY_ABI = [

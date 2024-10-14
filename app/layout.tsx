@@ -13,6 +13,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http } from 'viem';
 import WebGLBackground from './components/WebGLBackground';
 import { Providers } from './providers';
+import Header from './components/Header';
+import { WagmiProvider } from 'wagmi';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -32,7 +34,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <SolanaProvider>
+          <Providers>{children}</Providers>
+        </SolanaProvider>
       </body>
     </html>
   );

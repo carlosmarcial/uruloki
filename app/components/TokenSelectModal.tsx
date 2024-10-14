@@ -1,29 +1,90 @@
-import React, { useState } from 'react';
-import { Token } from '@/lib/fetchTokenList';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Search } from 'lucide-react';
+import TokenImage from './TokenImage';
+
+interface Token {
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  logoURI?: string;
+}
+
+interface SolanaToken {
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  logoURI: string;
+  tags: string[];
+  daily_volume: number;
+}
 
 interface TokenSelectModalProps {
-  tokens: Token[];
+  tokens: (Token | SolanaToken)[];
   onClose: () => void;
-  onSelect: (token: Token) => void;
+  onSelect: (token: Token | SolanaToken) => void;
 }
 
 const TokenSelectModal: React.FC<TokenSelectModalProps> = ({ tokens, onClose, onSelect }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [filteredTokens, setFilteredTokens] = useState<(Token | SolanaToken)[]>([]);
+  const [visibleTokens, setVisibleTokens] = useState<(Token | SolanaToken)[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const INITIAL_LOAD = 15;
+  const LOAD_MORE_COUNT = 10;
 
-  const filteredTokens = tokens.filter(token => 
-    token.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    token.symbol.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filterTokens = useCallback(() => {
+    return tokens.filter(token => 
+      token.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      token.symbol.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [tokens, searchTerm]);
+
+  useEffect(() => {
+    const filtered = filterTokens();
+    setFilteredTokens(filtered);
+    setVisibleTokens(filtered.slice(0, INITIAL_LOAD));
+  }, [filterTokens]);
+
+  const loadMoreTokens = useCallback(() => {
+    setVisibleTokens(prevTokens => {
+      const currentLength = prevTokens.length;
+      const nextTokens = filteredTokens.slice(currentLength, currentLength + LOAD_MORE_COUNT);
+      return [...prevTokens, ...nextTokens];
+    });
+  }, [filteredTokens]);
+
+  const handleScroll = useCallback(() => {
+    if (containerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+      if (scrollHeight - scrollTop <= clientHeight * 1.5) {
+        loadMoreTokens();
+      }
+    }
+  }, [loadMoreTokens]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [handleScroll]);
+
+  const handleClickOutside = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-900 rounded-lg w-full max-w-md p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleClickOutside}>
+      <div className="bg-gray-800 rounded-lg p-4 w-96 max-h-[80vh] overflow-hidden">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-white">Select a token</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X size={24} />
           </button>
         </div>
         <div className="mb-4 relative">
@@ -32,30 +93,26 @@ const TokenSelectModal: React.FC<TokenSelectModalProps> = ({ tokens, onClose, on
             placeholder="Search tokens"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-gray-800 text-white rounded-full py-2 pl-10 pr-4 focus:outline-none"
+            className="w-full bg-gray-700 text-white rounded-md py-2 pl-10 pr-4"
           />
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-          </svg>
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
         </div>
-        <div className="mb-4">
-          <h3 className="text-gray-400 text-sm font-semibold">Your tokens</h3>
-        </div>
-        <div className="max-h-96 overflow-y-auto">
-          {filteredTokens.map(token => (
+        <div ref={containerRef} className="space-y-2 overflow-y-auto max-h-[60vh]">
+          {visibleTokens.map((token) => (
             <div
               key={token.address}
-              className="flex items-center justify-between p-2 hover:bg-gray-800 cursor-pointer"
+              className="flex items-center space-x-2 p-2 hover:bg-gray-700 rounded cursor-pointer"
               onClick={() => onSelect(token)}
             >
-              <div className="flex items-center">
-                <img src={token.logoURI} alt={token.symbol} className="w-8 h-8 mr-3 rounded-full" />
-                <div>
-                  <div className="text-white font-semibold">{token.name}</div>
-                  <div className="text-gray-400 text-sm">{token.symbol}</div>
-                </div>
-              </div>
-              {/* Add balance display here if available */}
+              <TokenImage
+                src={token.logoURI}
+                alt={token.name}
+                width={24}
+                height={24}
+                className="rounded-full"
+              />
+              <span className="text-white">{token.symbol}</span>
+              <span className="text-gray-400 text-sm">{token.name}</span>
             </div>
           ))}
         </div>

@@ -21,6 +21,11 @@ import { fetchTokenPrice } from '../utils/priceUtils';
 import { EXCHANGE_PROXY_ABI, EXCHANGE_PROXY_ADDRESSES, ERC20_ABI } from '@app/constants';
 import TokenSelectModal from '@/app/components/TokenSelectModal';
 import { simulateContract, waitForTransactionReceipt } from 'wagmi/actions';
+import ChainToggle from './ChainToggle';
+import MainTrading from './ChainToggle';
+import { WalletButton } from './WalletButton';
+import TokenImage from './TokenImage';
+import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll } from 'wagmi/chains';
 
 // Add these animation variants
 const containerVariants = {
@@ -65,13 +70,24 @@ interface Token {
   logoURI?: string;
 }
 
+interface SolanaToken {
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  logoURI: string;
+  tags: string[];
+  daily_volume: number;
+}
+
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
   setActiveChain: (chain: 'ethereum' | 'solana') => void;
 }) {
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [sellToken, setSellToken] = useState<Token | null>(null);
-  const [buyToken, setBuyToken] = useState<Token | null>(null);
+  const [solanaTokens, setSolanaTokens] = useState<SolanaToken[]>([]);
+  const [sellToken, setSellToken] = useState<Token | SolanaToken | null>(null);
+  const [buyToken, setBuyToken] = useState<Token | SolanaToken | null>(null);
   const [sellAmount, setSellAmount] = useState<string>('');
   const [buyAmount, setBuyAmount] = useState<string>('');
   const [isTokenSelectModalOpen, setIsTokenSelectModalOpen] = useState(false);
@@ -96,8 +112,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const { sendTransactionAsync } = useSendTransaction();
   const { waitForTransactionReceipt } = useWaitForTransactionReceipt();
 
-  // Only use Solana wallet when activeChain is 'solana'
-  const solanaWallet = activeChain === 'solana' ? useWallet() : null;
+  // Solana wallet
+  const solanaWallet = useWallet();
 
   const exchangeProxyAddress = EXCHANGE_PROXY_ADDRESSES[chainId];
 
@@ -183,6 +199,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           buyToken: buyToken.address,
           sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
           takerAddress: address,
+          affiliateAddress: '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6',
+          affiliateFee: '0.01', // 1% fee
         }
       });
 
@@ -249,12 +267,25 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setTokens(fetchedTokens);
   }, [chainId]);
 
-  useEffect(() => {
-    fetchTokens();
-  }, [fetchTokens]);
+  const fetchSolanaTokens = useCallback(async () => {
+    try {
+      const response = await axios.get('https://tokens.jup.ag/tokens?tags=verified');
+      setSolanaTokens(response.data);
+    } catch (error) {
+      console.error('Error fetching Solana tokens:', error);
+    }
+  }, []);
 
-  const openTokenSelectModal = (tokenType: 'sell' | 'buy') => {
-    setSelectingTokenFor(tokenType);
+  useEffect(() => {
+    if (activeChain === 'ethereum') {
+      fetchTokens();
+    } else {
+      fetchSolanaTokens();
+    }
+  }, [activeChain, fetchTokens, fetchSolanaTokens]);
+
+  const openTokenSelectModal = (type: 'sell' | 'buy') => {
+    setSelectingTokenFor(type);
     setIsTokenSelectModalOpen(true);
   };
 
@@ -263,7 +294,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setSelectingTokenFor(null);
   };
 
-  const handleTokenSelect = (token: Token) => {
+  const handleTokenSelect = (token: Token | SolanaToken) => {
     if (selectingTokenFor === 'sell') {
       setSellToken(token);
     } else if (selectingTokenFor === 'buy') {
@@ -272,12 +303,18 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     closeTokenSelectModal();
   };
 
-  const renderTokenSelector = (token: Token | null, onClick: () => void) => (
+  const renderTokenSelector = (token: Token | SolanaToken | null, onClick: () => void) => (
     <div className="flex items-center justify-between bg-gray-800 rounded-full px-4 py-2 cursor-pointer" onClick={onClick}>
       {token ? (
         <>
           <div className="flex items-center">
-            <img src={token.logoURI} alt={token.symbol} className="w-6 h-6 mr-2 rounded-full" />
+            <TokenImage
+              src={token.logoURI}
+              alt={token.name}
+              width={24}
+              height={24}
+              className="rounded-full"
+            />
             <span className="text-white font-semibold">{token.symbol}</span>
           </div>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
@@ -290,14 +327,44 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     </div>
   );
 
-  const renderSwapInterface = () => {
+  const chainOptions = [
+    { id: mainnet.id, name: 'Ethereum' },
+    { id: polygon.id, name: 'Polygon' },
+    { id: optimism.id, name: 'Optimism' },
+    { id: arbitrum.id, name: 'Arbitrum' },
+    { id: base.id, name: 'Base' },
+    { id: avalanche.id, name: 'Avalanche' },
+    { id: bsc.id, name: 'BSC' },
+    { id: linea.id, name: 'Linea' },
+    { id: mantle.id, name: 'Mantle' },
+    { id: scroll.id, name: 'Scroll' },
+  ];
+
+  const renderChainSelector = () => (
+    <select
+      value={chainId}
+      onChange={(e) => setChainId(Number(e.target.value))}
+      className="bg-gray-800 text-white rounded-md p-2"
+    >
+      {chainOptions.map((chain) => (
+        <option key={chain.id} value={chain.id}>
+          {chain.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  const renderEthereumSwapInterface = () => {
     const isSwapDisabled = !isConnected || !sellToken || !buyToken || !sellAmount || isSwapPending || isSwapLoading;
     console.log('Swap button disabled:', isSwapDisabled);
 
     return (
-      <div className="p-4 bg-gray-900 rounded-lg">
+      <div className="bg-gray-900 rounded-lg p-4">
         <div className="mb-4">
           <ConnectButton />
+        </div>
+        <div className="mb-4">
+          {renderChainSelector()}
         </div>
 
         <div className="mb-4">
@@ -314,7 +381,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             />
             {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
           </div>
-          {/* Add balance display here if available */}
         </div>
         <div className="flex justify-center mb-4">
           <div className="bg-gray-800 p-2 rounded-full cursor-pointer">
@@ -338,63 +404,108 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             />
             {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
           </div>
-          {/* Add balance display here if available */}
         </div>
-        <button
-          onClick={handleSwap}
-          disabled={!isConnected || !sellToken || !buyToken || !sellAmount || isSwapPending || isSwapLoading}
-          className="w-full py-3 px-4 bg-pink-500 text-white rounded-lg font-semibold disabled:bg-gray-600 disabled:cursor-not-allowed"
-        >
-          {!isConnected ? 'Connect Wallet' : isSwapPending ? 'Confirm in Wallet...' : isSwapLoading ? 'Swapping...' : 'Swap'}
-        </button>
-        {isSwapSuccess && <div className="mt-2 text-green-500">Swap successful!</div>}
-        {swapError && <div className="mt-2 text-red-500">Swap failed: {swapError}</div>}
+        <div className="flex justify-center">
+          <button
+            onClick={handleSwap}
+            disabled={isSwapDisabled}
+            className="py-3 px-4 bg-pink-500 text-white rounded-lg font-semibold disabled:bg-gray-600 disabled:cursor-not-allowed w-2/3"
+          >
+            {!isConnected ? 'Connect Wallet' : isSwapPending ? 'Confirm in Wallet...' : isSwapLoading ? 'Swapping...' : 'Swap'}
+          </button>
+        </div>
+        {isSwapSuccess && <div className="mt-2 text-center text-green-500">Swap successful!</div>}
+        {swapError && <div className="mt-2 text-center text-red-500">Swap failed: {swapError}</div>}
       </div>
     );
   };
 
-  useEffect(() => {
-    console.log('Component mounted or updated');
-    console.log('Current state:', { 
-      sellToken, 
-      buyToken, 
-      sellAmount, 
-      buyAmount, 
-      isConnected, 
-      address, 
-      chainId 
-    });
-  }, [sellToken, buyToken, sellAmount, buyAmount, isConnected, address, chainId]);
+  const renderSolanaSwapInterface = () => {
+    const isSolanaSwapDisabled = !solanaWallet.connected || !sellToken || !buyToken || !sellAmount;
 
-  useEffect(() => {
-    if (isSwapSuccess) {
-      console.log('Swap transaction confirmed:', swapData?.hash);
-      // Handle successful swap (e.g., update UI, clear inputs, etc.)
-    }
-  }, [isSwapSuccess, swapData?.hash]);
+    return (
+      <div className="bg-gray-900 rounded-lg p-4">
+        <div className="mb-4">
+          <WalletButton />
+        </div>
 
-  useEffect(() => {
-    if (isSwapError) {
-      console.error('Swap failed');
-      setSwapError('Swap failed. Please try again.');
-    }
-  }, [isSwapError]);
+        <div className="mb-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-gray-400">Sell</span>
+          </div>
+          <div className="flex items-center bg-gray-800 rounded-lg p-3">
+            <input
+              type="number"
+              value={sellAmount}
+              onChange={(e) => setSellAmount(e.target.value)}
+              className="bg-transparent text-white text-2xl w-full outline-none"
+              placeholder="0"
+            />
+            {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
+          </div>
+        </div>
+        <div className="flex justify-center mb-4">
+          <div className="bg-gray-800 p-2 rounded-full cursor-pointer">
+            <ArrowUpDown className="h-6 w-6 text-gray-400" />
+          </div>
+        </div>
+        <div className="mb-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-gray-400">Buy</span>
+          </div>
+          <div className="flex items-center bg-gray-800 rounded-lg p-3">
+            <input
+              type="number"
+              value={buyAmount}
+              onChange={(e) => setBuyAmount(e.target.value)}
+              className="bg-transparent text-white text-2xl w-full outline-none"
+              placeholder="0"
+              readOnly
+            />
+            {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
+          </div>
+        </div>
+        <div className="flex justify-center">
+          <button
+            onClick={() => {/* Implement Solana swap logic */}}
+            disabled={isSolanaSwapDisabled}
+            className="py-3 px-4 bg-purple-500 text-white rounded-lg font-semibold disabled:bg-gray-600 disabled:cursor-not-allowed w-2/3"
+          >
+            {!solanaWallet.connected ? 'Connect Wallet' : 'Swap'}
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="flex flex-col xl:flex-row gap-4 w-full pt-0 px-4 pb-6 max-w-[1400px] mx-auto justify-center">
-      <div className="w-full xl:w-[58%] bg-gray-800 rounded-lg overflow-hidden" style={{ height: '550px' }}>
-        <TokenChart ref={chartRef} />
+    <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
+      <div className="w-full mb-4">
+        <ChainToggle activeChain={activeChain} setActiveChain={setActiveChain} />
       </div>
-      <div className="w-full xl:w-[42%]">
-        {renderSwapInterface()}
+      <div className="flex flex-col xl:flex-row gap-2 w-full">
+        <div className="w-full xl:w-[58%] bg-gray-800 rounded-lg overflow-hidden" style={{ height: '550px' }}>
+          <TokenChart ref={chartRef} />
+        </div>
+        <div className="w-full xl:w-[42%] flex flex-col">
+          {activeChain === 'ethereum' ? (
+            <div className="flex-grow bg-gray-900 rounded-lg">
+              {renderEthereumSwapInterface()}
+            </div>
+          ) : (
+            <div className="flex-grow bg-gray-900 rounded-lg">
+              {renderSolanaSwapInterface()}
+            </div>
+          )}
+        </div>
+        {isTokenSelectModalOpen && (
+          <TokenSelectModal
+            tokens={activeChain === 'ethereum' ? tokens : solanaTokens}
+            onClose={closeTokenSelectModal}
+            onSelect={handleTokenSelect}
+          />
+        )}
       </div>
-      {isTokenSelectModalOpen && (
-        <TokenSelectModal
-          tokens={tokens}
-          onClose={closeTokenSelectModal}
-          onSelect={handleTokenSelect}
-        />
-      )}
     </div>
   );
 }
