@@ -1,30 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest) {
-  const symbol = request.nextUrl.searchParams.get('symbol');
-  
-  if (!symbol) {
-    return NextResponse.json({ error: 'Symbol is required' }, { status: 400 });
-  }
-
-  const apiKey = process.env.NEXT_PUBLIC_COINMARKETCAP_API_KEY;
-  const url = `https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest?symbol=${symbol}`;
-
+export async function GET() {
   try {
-    const response = await fetch(url, {
-      headers: {
-        'X-CMC_PRO_API_KEY': apiKey as string,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
+    const response = await fetch('https://tokens.coingecko.com/uniswap/all.json');
     const data = await response.json();
-    return NextResponse.json(data);
+
+    // Filter for Ethereum tokens (chainId 1)
+    const ethereumTokens = data.tokens.filter((token: any) => token.chainId === 1);
+
+    return NextResponse.json(ethereumTokens);
   } catch (error) {
     console.error('Error fetching token data:', error);
-    return NextResponse.json({ error: 'Error fetching token data' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch token data' }, { status: 500 });
   }
 }

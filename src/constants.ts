@@ -8,7 +8,7 @@ export const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
 
 export const MAINNET_EXCHANGE_PROXY = "0xdef1c0ded9bec7f1a1670819833240f027b25eff";
 
-export const MAX_ALLOWANCE = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
+export const MAX_ALLOWANCE = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
 
 interface Token {
   name: string;
@@ -66,3 +66,19 @@ export const MAINNET_TOKENS_BY_ADDRESS: Record<string, Token> = MAINNET_TOKENS.r
 }, {} as Record<string, Token>);
 
 export const SUPPORTED_CHAINS = [mainnet, polygon, optimism, arbitrum];
+
+export const TOKEN_LIST_URL = 'https://tokens.coingecko.com/uniswap/all.json';
+
+export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+
+export const GAS_LIMIT_BUFFER = 1.1; // 10% buffer
+
+export const DEFAULT_DEADLINE = Math.floor(Date.now() / 1000) + 20 * 60; // 20 minutes from now
+
+export const API_PRICE_URL = '/api/price';
+export const API_QUOTE_URL = '/api/quote';
+
+export const EXCHANGE_PROXY_ADDRESSES: { [chainId: number]: string } = {
+  1: '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // Mainnet
+  // Add other chain IDs and their respective exchange proxy addresses
+};

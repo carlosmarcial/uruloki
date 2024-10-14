@@ -211,3 +211,169 @@ body {
   text-decoration: none;
   cursor: pointer;
 }
+
+/* Styles for the new tab interface */
+.tab-container {
+  display: flex;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tab-button {
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.tab-button.active {
+  border-bottom-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.limit-order-placeholder {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  background-color: #f3f4f6;
+  border-radius: 0.5rem;
+}
+
+/* Add this to ensure text is visible */
+.marquee-item span {
+  display: inline-block;
+  color: rgba(0, 0, 0, 0.9); /* Darker text for better contrast */
+  font-weight: 600; /* Make the text a bit bolder for better visibility */
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.2); /* Add a subtle text shadow for depth */
+}
+
+/* Remove the .animate-marquee-reverse and related styles as they're no longer needed */
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+}
+
+#tradingview_chart {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (max-width: 1023px) {
+  .chart-container {
+    height: 400px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .cursor-col-resize {
+    cursor: col-resize;
+  }
+}
+
+.modal {
+  display: block;
+  position: fixed;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgb(0,0,0);
+  background-color: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+  background-color: #fefefe;
+  margin: 15% auto;
+  padding: 20px;
+  border: 1px solid #888;
+  width: 80%;
+}
+
+.close {
+  color: #aaa;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+  color: black;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* Styles for the new tab interface */
+.tab-container {
+  display: flex;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tab-button {
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.tab-button.active {
+  border-bottom-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.limit-order-placeholder {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  background-color: #f3f4f6;
+  border-radius: 0.5rem;
+}
+
+/* Add these styles at the end of your global.css file */
+
+body {
+  background-color: transparent;
+}
+
+#__next {
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure the WebGLBackground is visible */
+.webgl-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Ensure content is above the background */
+.content-wrapper {
+  position: relative;
+  z-index: 1;
+}
+
+.off-screen-content {
+  content-visibility: auto;
+}

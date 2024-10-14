@@ -1,29 +1,39 @@
 "use client";
 
-import { WagmiConfig, createConfig } from 'wagmi';
-import { mainnet } from 'wagmi/chains';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ConnectKitProvider, getDefaultConfig } from "connectkit";
 import { useState } from 'react';
+import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
+import '@rainbow-me/rainbowkit/styles.css';
+import { WagmiProvider } from 'wagmi';
+import { mainnet, polygon, optimism, arbitrum, base } from 'wagmi/chains';
+import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
+import ModelPreloader from '@app/components/ModelPreloader';
 
-const config = createConfig(
-  getDefaultConfig({
-    appName: "Uruloki",
-    walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
-    chains: [mainnet],
-  }),
-);
+// Ensure you have this type for the environment variable
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      NEXT_PUBLIC_REOWN_PROJECT_ID: string;
+    }
+  }
+}
+
+const config = getDefaultConfig({
+  appName: 'Uruloki',
+  projectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
+  chains: [mainnet, polygon, optimism, arbitrum, base],
+  ssr: true, // Enable server-side rendering mode
+});
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <WagmiConfig config={config}>
+    <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <ConnectKitProvider>
+        <RainbowKitProvider chains={config.chains}>
           {children}
-        </ConnectKitProvider>
+        </RainbowKitProvider>
       </QueryClientProvider>
-    </WagmiConfig>
+    </WagmiProvider>
   );
 }

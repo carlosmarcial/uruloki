@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera } from '@react-three/drei';
 import { EffectComposer, Bloom, ChromaticAberration } from '@react-three/postprocessing';
@@ -41,7 +41,25 @@ function LoadingSpinner() {
   );
 }
 
-export default function MainTrading() {
+interface MainTradingProps {
+  buttonState: 'swap' | 'approve' | 'loading';
+  setButtonState: React.Dispatch<React.SetStateAction<'swap' | 'approve' | 'loading'>>;
+  selectedToken: any; // Consider replacing 'any' with a more specific type
+  setSelectedToken: React.Dispatch<React.SetStateAction<any>>; // Same here
+  sellAmount: string;
+  setSellAmount: React.Dispatch<React.SetStateAction<string>>;
+  handleButtonClick: () => void;
+}
+
+const MainTrading: React.FC<MainTradingProps> = ({
+  buttonState,
+  setButtonState,
+  selectedToken,
+  setSelectedToken,
+  sellAmount,
+  setSellAmount,
+  handleButtonClick
+}) => {
   const [activeChain, setActiveChain] = useState<'ethereum' | 'solana'>('ethereum');
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
@@ -92,9 +110,34 @@ export default function MainTrading() {
           </div>
         </div>
         <div className="mt-0">
-          <UnifiedSwapInterface activeChain={activeChain} setActiveChain={setActiveChain} />
+          <UnifiedSwapInterface
+            activeChain={activeChain}
+            setActiveChain={setActiveChain}
+            buttonState={buttonState}
+            setButtonState={setButtonState}
+            selectedToken={selectedToken}
+            setSelectedToken={setSelectedToken}
+            sellAmount={sellAmount}
+            setSellAmount={setSellAmount}
+            handleButtonClick={handleButtonClick}
+          />
         </div>
       </div>
+      <button
+        onClick={handleButtonClick}
+        disabled={buttonState === 'loading'}
+        className={`w-full py-2 px-4 rounded-md font-semibold text-sm transition-colors ${
+          buttonState === 'loading'
+            ? 'bg-gray-400 cursor-not-allowed'
+            : buttonState === 'approve'
+            ? 'bg-yellow-500 hover:bg-yellow-600'
+            : 'bg-[#77be44] hover:bg-[#69a93d]'
+        } text-white`}
+      >
+        {buttonState === 'loading' ? 'Loading...' : buttonState === 'approve' ? 'Approve' : 'Swap'}
+      </button>
     </main>
   );
-}
+};
+
+export default MainTrading;

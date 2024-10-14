@@ -1,10 +1,15 @@
-import TokenSelector from './TokenSelector';
+import React, { useState } from 'react';
+import UnifiedSwapInterface from '../components/UnifiedSwapInterface';
 
-export default function TokenListPage() {
+const TokenListPage: React.FC = () => {
+  const [activeChain, setActiveChain] = useState<'ethereum' | 'solana'>('ethereum');
+
   return (
     <div>
-      <h1>Token Selector</h1>
-      <TokenSelector />
+      <h1>Token List and Swap</h1>
+      <UnifiedSwapInterface activeChain={activeChain} setActiveChain={setActiveChain} />
     </div>
   );
-}
+};
+
+export default TokenListPage;

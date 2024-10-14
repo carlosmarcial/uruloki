@@ -1,53 +1,64 @@
 'use client';
 
-import React from 'react';
-import { Chain } from 'wagmi';
-import { Token } from '../../types/token';
+import React, { useState } from 'react';
+import { Token } from '../../lib/fetchTokenList';
 
 interface TokenSelectorProps {
-  label: string;
-  selectedTokenSymbol: string;
-  onSelectToken: (token: string) => void;
-  amount: string;
-  onAmountChange?: (amount: string) => void;
-  readOnly?: boolean;
   tokens: Token[];
-  onClose: () => void;
-  chains: Chain[];
-  selectedChain: Chain | null;
-  onChainChange: (chainId: number) => void;
+  onSelect: (token: Token) => void;
+  selectedToken: Token | null;
+  label: string;
 }
 
 const TokenSelector: React.FC<TokenSelectorProps> = ({
-  tokens,
+  tokens = [],  // Provide a default empty array
   onSelect,
-  onClose,
-  chains,
-  selectedChain,
-  onChainChange,
+  selectedToken,
+  label,
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredTokens = tokens.filter((token) =>
+    token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    token.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="token-selector-modal">
-      <div className="chain-selector">
-        <select
-          value={selectedChain?.id || ''}
-          onChange={(e) => onChainChange(Number(e.target.value))}
-        >
-          {chains.map((chain) => (
-            <option key={chain.id} value={chain.id}>
-              {chain.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="token-list">
-        {tokens.map((token) => (
-          <div key={token.address} className="token-item" onClick={() => onSelect(token)}>
-            {token.symbol}
+    <div>
+      <label>{label}</label>
+      <div onClick={() => setIsOpen(!isOpen)}>
+        {selectedToken ? (
+          <div>
+            <img src={selectedToken.logoURI} alt={selectedToken.symbol} width={24} height={24} />
+            <span>{selectedToken.symbol}</span>
           </div>
-        ))}
+        ) : (
+          <span>Select a token</span>
+        )}
       </div>
-      <button onClick={onClose}>Close</button>
+      {isOpen && (
+        <div>
+          <input
+            type="text"
+            placeholder="Search tokens"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <ul>
+            {filteredTokens.map((token) => (
+              <li key={token.address} onClick={() => {
+                onSelect(token);
+                setIsOpen(false);
+              }}>
+                <img src={token.logoURI} alt={token.symbol} width={24} height={24} />
+                <span>{token.symbol}</span>
+                <span>{token.name}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };

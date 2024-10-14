@@ -1,52 +1,69 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, ArrowUpDown, Search, X, Wallet } from "lucide-react";
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { ChevronDown, ArrowUpDown, Search, X, Wallet, ArrowUp } from "lucide-react";
 import Image from "next/image";
-import { useAccount, useBalance, useChainId, useConnect, useDisconnect } from 'wagmi';
+import { useAccount, useBalance, useChainId, useConnect, useDisconnect, useContractRead, useWaitForTransactionReceipt, useConfig, useWriteContract, useEstimateGas, useSignTypedData, useSendTransaction, usePublicClient } from 'wagmi';
+import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { formatUnits, parseUnits } from "ethers";
-import { useReadContract, useSimulateContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { erc20Abi, Address } from "viem";
-import { MAINNET_TOKENS, MAINNET_TOKENS_BY_SYMBOL, MAX_ALLOWANCE, AFFILIATE_FEE, FEE_RECIPIENT } from "../../src/constants";
-import qs from "qs";
+import { formatUnits, parseUnits } from "viem";
+import { erc20Abi } from '@app/abis/erc20Abi';
+import { Address } from 'viem';
+import { MAINNET_TOKENS, MAX_ALLOWANCE, MAINNET_EXCHANGE_PROXY } from "../../src/constants";
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import TokenChart, { TokenChartRef } from './TokenChart';
 import TokenSelector from '../token-list/TokenSelector';
-import { fetchTokenList } from '../../lib/fetchTokenList';
-import { Token } from '../../types/token';
-import { isAddress } from 'ethers';
+import { fetchTokenList, Token } from '@/lib/fetchTokenList';
+import { fetchTokenPrice } from '../utils/priceUtils';
+import { EXCHANGE_PROXY_ABI, EXCHANGE_PROXY_ADDRESSES, ERC20_ABI } from '@app/constants';
+import TokenSelectModal from '@/app/components/TokenSelectModal';
+import { simulateContract, waitForTransactionReceipt } from 'wagmi/actions';
 
-// Define custom tokens
-const TSUKA: Token = {
-  name: "Dejitaru Tsuka",
-  symbol: "TSUKA",
-  address: "0xc5fb36dd2fb59d3b98deff88425a3f425ee469ed",
-  decimals: 9,
-  logoURI: "/tsuka-logo.png",
-  chainId: 1
+// Add these animation variants
+const containerVariants = {
+  hidden: { opacity: 0, y: 50 },
+  visible: { 
+    opacity: 1, 
+    y: 0,
+    transition: {
+      duration: 0.5,
+      ease: "easeOut",
+      when: "beforeChildren",
+      staggerChildren: 0.1
+    }
+  },
+  exit: { 
+    opacity: 0, 
+    y: 50,
+    transition: {
+      duration: 0.3,
+      ease: "easeIn"
+    }
+  }
 };
 
-// Add these constants at the top of the file
-const DEFAULT_SOLANA_SELL_TOKEN: Token = {
-  name: "Solana",
-  symbol: "SOL",
-  address: "So11111111111111111111111111111111111111112",
-  decimals: 9,
-  logoURI: "/sol-logo.png",
-  chainId: 101
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { 
+    opacity: 1, 
+    y: 0,
+    transition: {
+      duration: 0.3,
+      ease: "easeOut"
+    }
+  }
 };
 
-const DEFAULT_SOLANA_BUY_TOKEN: Token = {
-  name: "USD Coin",
-  symbol: "USDC",
-  address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  decimals: 6,
-  logoURI: "/usdc-logo.png",
-  chainId: 101
-};
+interface Token {
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoURI?: string;
+}
 
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
@@ -55,364 +72,328 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [sellToken, setSellToken] = useState<Token | null>(null);
   const [buyToken, setBuyToken] = useState<Token | null>(null);
-  const [sellAmount, setSellAmount] = useState("");  // Changed to empty string
-  const [buyAmount, setBuyAmount] = useState("");    // Changed to empty string
+  const [sellAmount, setSellAmount] = useState<string>('');
+  const [buyAmount, setBuyAmount] = useState<string>('');
+  const [isTokenSelectModalOpen, setIsTokenSelectModalOpen] = useState(false);
+  const [selectingTokenFor, setSelectingTokenFor] = useState<'sell' | 'buy' | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<"sell" | "buy">("sell");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('swap');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isAnalyzeModalOpen, setIsAnalyzeModalOpen] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  const [approvalState, setApprovalState] = useState<'idle' | 'needed' | 'approving' | 'approved'>('idle');
+  const [approveRequest, setApproveRequest] = useState<any>(null);
+  
   const chartRef = useRef<TokenChartRef>(null);
-  const [chartImage, setChartImage] = useState<string | null>(null);
-
-  // Ethereum hooks
-  const { address, isConnected: isEthereumConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
+  const config = useConfig();
+  const publicClient = usePublicClient();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { sendTransactionAsync } = useSendTransaction();
+  const { waitForTransactionReceipt } = useWaitForTransactionReceipt();
 
-  // Solana hooks
-  const { publicKey, connected: isSolanaConnected, select, disconnect: disconnectSolana } = useWallet();
+  // Only use Solana wallet when activeChain is 'solana'
+  const solanaWallet = activeChain === 'solana' ? useWallet() : null;
 
+  const exchangeProxyAddress = EXCHANGE_PROXY_ADDRESSES[chainId];
+
+  const { data: allowance, refetch: refetchAllowance } = useContractRead({
+    address: sellToken?.address,
+    abi: ERC20_ABI,
+    functionName: 'allowance',
+    args: [address, exchangeProxyAddress],
+    watch: true,
+    enabled: !!sellToken && !!address && !!chainId && !!exchangeProxyAddress && activeChain === 'ethereum',
+  });
+
+  const { writeContract: approveToken, data: approveData } = useWriteContract();
+
+  const { isLoading: isApproving, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
+    hash: approveData?.hash,
+  });
+
+  const { writeContract, data: swapData, isLoading: isSwapPending, isError: isSwapError } = useWriteContract();
+
+  const { isLoading: isSwapLoading, isSuccess: isSwapSuccess } = useWaitForTransactionReceipt({
+    hash: swapData?.hash,
+  });
+
+  const { estimateGas } = useEstimateGas();
+
+  // Check if approval is needed and prepare approval request
   useEffect(() => {
-    const loadTokens = async () => {
-      if (activeChain === 'ethereum') {
-        const fetchedTokens = await fetchTokenList(chainId);
-        const ethereumTokens = fetchedTokens.filter(token => token.chainId === chainId);
-        
-        // Fetch prices for Ethereum tokens
-        const tokensWithPrices = await Promise.all(ethereumTokens.map(async (token) => {
-          const price = await fetchTokenPrice(token.address);
-          return { ...token, price };
-        }));
-
-        const usdc = tokensWithPrices.find(token => token.symbol === 'USDC');
-        
-        const allTokens = [{ ...TSUKA, price: await fetchTokenPrice(TSUKA.address) }, ...tokensWithPrices];
-        setTokens(allTokens);
-        
-        if (usdc) {
-          setSellToken(usdc);
-        }
-        setBuyToken({ ...TSUKA, price: await fetchTokenPrice(TSUKA.address) });
+    if (sellToken && sellAmount && allowance !== undefined && exchangeProxyAddress) {
+      const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
+      if (sellAmountBigInt > allowance) {
+        setApprovalState('needed');
+        setApproveRequest({
+          address: sellToken.address,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [exchangeProxyAddress, sellAmountBigInt],
+        });
       } else {
-        // For Solana, you might need to implement a different price fetching mechanism
-        const solanaTokens = [
-          { ...DEFAULT_SOLANA_SELL_TOKEN, price: 1 }, // Placeholder price
-          { ...DEFAULT_SOLANA_BUY_TOKEN, price: 1 }, // Placeholder price
-        ];
-        setTokens(solanaTokens);
-        setSellToken(solanaTokens[0]);
-        setBuyToken(solanaTokens[1]);
+        setApprovalState('approved');
+        setApproveRequest(null);
       }
-    };
-
-    loadTokens();
-  }, [activeChain, chainId]);
-
-  const modalRef = useRef<HTMLDivElement>(null);
-
-  const openModal = (type: "sell" | "buy") => {
-    setModalType(type);
-    setModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setModalOpen(false);
-    setSearchQuery("");
-  };
-
-  const handleOutsideClick = (e: React.MouseEvent) => {
-    if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
-      closeModal();
     }
-  };
+  }, [sellToken, sellAmount, allowance, exchangeProxyAddress]);
 
-  const selectToken = (token: Token) => {
-    if (modalType === "sell") {
-      setSellToken(token);
-    } else {
-      setBuyToken(token);
+  // Handle approval success
+  useEffect(() => {
+    if (isApproveSuccess) {
+      setApprovalState('approved');
+      refetchAllowance();
     }
-    closeModal();
+  }, [isApproveSuccess, refetchAllowance]);
+
+  const handleApprove = useCallback(() => {
+    if (approveRequest) {
+      approveToken(approveRequest);
+      setApprovalState('approving');
+    }
+  }, [approveRequest, approveToken]);
+
+  const [swapError, setSwapError] = useState<string | null>(null);
+
+  const handleSwap = async () => {
+    console.log('handleSwap function called');
+    if (!isConnected || !sellToken || !buyToken || !sellAmount || !address || !chainId) {
+      console.log('Missing required data for swap');
+      return;
+    }
+
+    try {
+      console.log('Fetching swap quote with params:', {
+        chainId,
+        sellToken: sellToken.address,
+        buyToken: buyToken.address,
+        sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
+        takerAddress: address,
+      });
+
+      const response = await axios.get('/api/swap-price', {
+        params: {
+          chainId,
+          sellToken: sellToken.address,
+          buyToken: buyToken.address,
+          sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
+          takerAddress: address,
+        }
+      });
+
+      console.log('Swap quote received:', response.data);
+
+      const quote = response.data;
+
+      // Update the UI with the buy amount
+      setBuyAmount(quote.buyAmount);
+
+      let signature: string | undefined;
+      if (quote.permit2 && quote.permit2.eip712) {
+        // Sign the permit2 message
+        signature = await signTypedDataAsync(quote.permit2.eip712);
+        console.log('Signature:', signature);
+      } else {
+        console.log('No permit2 data in the quote, proceeding without signature');
+      }
+
+      // Prepare transaction data
+      let txData = quote.data;
+      if (signature) {
+        const MAGIC_CALLDATA_STRING = "f".repeat(130);
+        txData = quote.data.replace(MAGIC_CALLDATA_STRING, signature.slice(2)) as `0x${string}`;
+      }
+
+      // Send the transaction
+      const { hash } = await sendTransactionAsync({
+        to: quote.to as `0x${string}`,
+        data: txData,
+        value: BigInt(quote.value || 0),
+        gas: BigInt(quote.gas || 0),
+      });
+
+      console.log('Transaction sent:', hash);
+
+      // Wait for the transaction to be mined
+      const receipt = await waitForTransactionReceipt({ hash });
+      console.log('Transaction mined:', receipt);
+
+      // Update UI or state to reflect successful swap
+      // ...
+
+    } catch (error) {
+      console.error('Swap failed:', error);
+      if (axios.isAxiosError(error) && error.response) {
+        console.error('Error response:', error.response.data);
+        console.error('Error status:', error.response.status);
+        console.error('Error headers:', error.response.headers);
+      }
+      setSwapError(error.response?.data?.error || error.message || 'An unknown error occurred');
+    }
   };
 
   const swapTokens = () => {
-    const tempToken = sellToken;
     setSellToken(buyToken);
-    setBuyToken(tempToken);
+    setBuyToken(sellToken);
     setSellAmount(buyAmount);
     setBuyAmount(sellAmount);
   };
 
-  const handleSwap = async () => {
-    if (activeChain === 'ethereum') {
-      await handleEthereumSwap();
-    } else {
-      await handleSolanaSwap();
-    }
+  const fetchTokens = useCallback(async () => {
+    const fetchedTokens = await fetchTokenList(chainId);
+    setTokens(fetchedTokens);
+  }, [chainId]);
+
+  useEffect(() => {
+    fetchTokens();
+  }, [fetchTokens]);
+
+  const openTokenSelectModal = (tokenType: 'sell' | 'buy') => {
+    setSelectingTokenFor(tokenType);
+    setIsTokenSelectModalOpen(true);
   };
 
-  const handleEthereumSwap = async () => {
-    // Implement Ethereum swap logic using the existing price.tsx and quote.tsx
-    // This is a simplified version, you'll need to adapt it to your specific needs
-    const params = {
-      sellToken: sellToken?.address,
-      buyToken: buyToken?.address,
-      sellAmount: parseUnits(sellAmount, sellToken?.decimals || 18).toString(),
-      takerAddress: address,
-      feeRecipient: FEE_RECIPIENT,
-      buyTokenPercentageFee: AFFILIATE_FEE,
-    };
-
-    try {
-      const response = await fetch(`/api/quote?${qs.stringify(params)}`);
-      const quoteData = await response.json();
-
-      // Here you would typically call a smart contract function to execute the swap
-      // For simplicity, we're just logging the quote data
-      console.log("Ethereum swap quote:", quoteData);
-      // Implement the actual swap execution here
-    } catch (error) {
-      console.error("Error fetching Ethereum swap quote:", error);
-    }
+  const closeTokenSelectModal = () => {
+    setIsTokenSelectModalOpen(false);
+    setSelectingTokenFor(null);
   };
 
-  const handleSolanaSwap = async () => {
-    console.log("Solana swap not implemented yet");
+  const handleTokenSelect = (token: Token) => {
+    if (selectingTokenFor === 'sell') {
+      setSellToken(token);
+    } else if (selectingTokenFor === 'buy') {
+      setBuyToken(token);
+    }
+    closeTokenSelectModal();
   };
 
-  const containerVariants = {
-    hidden: { opacity: 0, y: 50 },
-    visible: { 
-      opacity: 1, 
-      y: 0,
-      transition: {
-        duration: 0.5,
-        ease: "easeOut",
-        when: "beforeChildren",
-        staggerChildren: 0.1
-      }
-    },
-    exit: { 
-      opacity: 0, 
-      y: 50,
-      transition: {
-        duration: 0.3,
-        ease: "easeIn"
-      }
-    }
+  const renderTokenSelector = (token: Token | null, onClick: () => void) => (
+    <div className="flex items-center justify-between bg-gray-800 rounded-full px-4 py-2 cursor-pointer" onClick={onClick}>
+      {token ? (
+        <>
+          <div className="flex items-center">
+            <img src={token.logoURI} alt={token.symbol} className="w-6 h-6 mr-2 rounded-full" />
+            <span className="text-white font-semibold">{token.symbol}</span>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </>
+      ) : (
+        <span className="text-gray-400">Select token</span>
+      )}
+    </div>
+  );
+
+  const renderSwapInterface = () => {
+    const isSwapDisabled = !isConnected || !sellToken || !buyToken || !sellAmount || isSwapPending || isSwapLoading;
+    console.log('Swap button disabled:', isSwapDisabled);
+
+    return (
+      <div className="p-4 bg-gray-900 rounded-lg">
+        <div className="mb-4">
+          <ConnectButton />
+        </div>
+
+        <div className="mb-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-gray-400">Sell</span>
+          </div>
+          <div className="flex items-center bg-gray-800 rounded-lg p-3">
+            <input
+              type="number"
+              value={sellAmount}
+              onChange={(e) => setSellAmount(e.target.value)}
+              className="bg-transparent text-white text-2xl w-full outline-none"
+              placeholder="0"
+            />
+            {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
+          </div>
+          {/* Add balance display here if available */}
+        </div>
+        <div className="flex justify-center mb-4">
+          <div className="bg-gray-800 p-2 rounded-full cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
+          </div>
+        </div>
+        <div className="mb-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-gray-400">Buy</span>
+          </div>
+          <div className="flex items-center bg-gray-800 rounded-lg p-3">
+            <input
+              type="number"
+              value={buyAmount}
+              onChange={(e) => setBuyAmount(e.target.value)}
+              className="bg-transparent text-white text-2xl w-full outline-none"
+              placeholder="0"
+              readOnly
+            />
+            {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
+          </div>
+          {/* Add balance display here if available */}
+        </div>
+        <button
+          onClick={handleSwap}
+          disabled={!isConnected || !sellToken || !buyToken || !sellAmount || isSwapPending || isSwapLoading}
+          className="w-full py-3 px-4 bg-pink-500 text-white rounded-lg font-semibold disabled:bg-gray-600 disabled:cursor-not-allowed"
+        >
+          {!isConnected ? 'Connect Wallet' : isSwapPending ? 'Confirm in Wallet...' : isSwapLoading ? 'Swapping...' : 'Swap'}
+        </button>
+        {isSwapSuccess && <div className="mt-2 text-green-500">Swap successful!</div>}
+        {swapError && <div className="mt-2 text-red-500">Swap failed: {swapError}</div>}
+      </div>
+    );
   };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { 
-      opacity: 1, 
-      y: 0,
-      transition: {
-        duration: 0.3,
-        ease: "easeOut"
-      }
+  useEffect(() => {
+    console.log('Component mounted or updated');
+    console.log('Current state:', { 
+      sellToken, 
+      buyToken, 
+      sellAmount, 
+      buyAmount, 
+      isConnected, 
+      address, 
+      chainId 
+    });
+  }, [sellToken, buyToken, sellAmount, buyAmount, isConnected, address, chainId]);
+
+  useEffect(() => {
+    if (isSwapSuccess) {
+      console.log('Swap transaction confirmed:', swapData?.hash);
+      // Handle successful swap (e.g., update UI, clear inputs, etc.)
     }
-  };
+  }, [isSwapSuccess, swapData?.hash]);
 
-  const handleAnalyze = async () => {
-    setIsAnalyzing(true);
-    setIsAnalyzeModalOpen(true);
-    try {
-      if (chartRef.current) {
-        const chartData = await chartRef.current.getChartData();
-        if (chartData) {
-          const response = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ chartData }),
-          });
-          const data = await response.json();
-          setAnalysis(data.analysis);
-        } else {
-          setAnalysis("Failed to retrieve chart data. Please try again.");
-        }
-      } else {
-        setAnalysis("Chart reference is not available. Please try again.");
-      }
-    } catch (error) {
-      console.error('Error analyzing chart data:', error);
-      setAnalysis("An error occurred while analyzing the chart data. Please try again.");
-    } finally {
-      setIsAnalyzing(false);
+  useEffect(() => {
+    if (isSwapError) {
+      console.error('Swap failed');
+      setSwapError('Swap failed. Please try again.');
     }
-  };
-
-  const handleScreenshot = async (imageData: string) => {
-    console.log("Screenshot received, length:", imageData.length);
-    setChartImage(imageData);
-    try {
-      console.log("Sending screenshot to API for analysis");
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: imageData }),
-      });
-      const data = await response.json();
-      console.log("Analysis response:", data);
-      setAnalysis(data.analysis || "No analysis provided");
-    } catch (error) {
-      console.error('Error analyzing chart image:', error);
-      setAnalysis("An error occurred while analyzing the chart image. Please try again.");
-    }
-  };
-
-  const fetchPrice = useCallback(async (amount: string) => {
-    if (!sellToken || !buyToken || !amount || parseFloat(amount) === 0) {
-      setBuyAmount("0");
-      return;
-    }
-
-    const params = {
-      sellToken: sellToken.address,
-      buyToken: buyToken.address,
-      sellAmount: parseUnits(amount, sellToken.decimals).toString(),
-      // Add other necessary parameters like chainId, takerAddress, etc.
-    };
-
-    try {
-      const response = await fetch(`/api/price?${qs.stringify(params)}`);
-      const data = await response.json();
-
-      if (data.buyAmount) {
-        setBuyAmount(formatUnits(data.buyAmount, buyToken.decimals));
-      }
-    } catch (error) {
-      console.error("Error fetching price:", error);
-      setBuyAmount("0");
-    }
-  }, [sellToken, buyToken]);
-
-  const handleSellAmountChange = (amount: string) => {
-    // Allow empty string or valid numbers
-    if (amount === '' || /^\d*\.?\d*$/.test(amount)) {
-      setSellAmount(amount);  // Set the amount as is, allowing empty string
-      // Trigger price fetch only if amount is not empty and not zero
-      if (amount !== '' && parseFloat(amount) > 0) {
-        fetchPrice(amount);
-      } else {
-        setBuyAmount(''); // Reset buy amount to empty string if sell amount is empty or zero
-      }
-    }
-  };
+  }, [isSwapError]);
 
   return (
     <div className="flex flex-col xl:flex-row gap-4 w-full pt-0 px-4 pb-6 max-w-[1400px] mx-auto justify-center">
       <div className="w-full xl:w-[58%] bg-gray-800 rounded-lg overflow-hidden" style={{ height: '550px' }}>
-        <div className="p-3 text-white flex items-center justify-between">
-          <button
-            onClick={handleAnalyze}
-            className="bg-[#77be44] hover:bg-[#69a93d] text-black font-semibold py-2 px-4 rounded text-sm transition-colors"
-            disabled={isAnalyzing}
-          >
-            {isAnalyzing ? 'Analyzing...' : 'Analyze'}
-          </button>
-        </div>
-        <div className="h-[calc(100%-52px)]">
-          {buyToken && <TokenChart ref={chartRef} token={buyToken} onScreenshot={handleScreenshot} />}
-        </div>
+        <TokenChart ref={chartRef} />
       </div>
-      <div className="w-full xl:w-[32%] bg-gray-800 rounded-lg p-6 text-white flex flex-col" style={{ height: '550px' }}>
-        <div className="flex justify-end mb-4">
-          <ConnectButton />
-        </div>
-        <div className="flex-grow flex flex-col">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeChain}
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="flex flex-col h-full"
-            >
-              <motion.div variants={itemVariants} className="mb-4">
-                <TokenInput
-                  label="Sell"
-                  amount={sellAmount}
-                  setAmount={handleSellAmountChange}
-                  token={sellToken}
-                  openModal={() => openModal("sell")}
-                />
-              </motion.div>
-              <motion.div variants={itemVariants} className="flex justify-center mb-4">
-                <button 
-                  onClick={swapTokens}
-                  className="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center hover:bg-gray-600 transition-colors"
-                >
-                  <ArrowUpDown className="text-[#77be44] w-6 h-6" />
-                </button>
-              </motion.div>
-              <motion.div variants={itemVariants} className="mb-6">
-                <TokenInput
-                  label="Buy"
-                  amount={buyAmount}
-                  setAmount={() => {}} // This is read-only
-                  token={buyToken}
-                  openModal={() => openModal("buy")}
-                  readOnly={true}
-                />
-              </motion.div>
-              <motion.div variants={itemVariants} className="mt-auto">
-                <button 
-                  onClick={activeChain === 'ethereum' ? handleSwap : handleSolanaSwap}
-                  disabled={!isEthereumConnected && !isSolanaConnected}
-                  className="w-full py-4 px-6 bg-[#77be44] rounded-md text-xl font-semibold hover:bg-opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Swap
-                </button>
-              </motion.div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
+      <div className="w-full xl:w-[42%]">
+        {renderSwapInterface()}
       </div>
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleOutsideClick}>
-          <TokenModal
-            ref={modalRef}
-            closeModal={closeModal}
-            tokens={tokens}
-            selectToken={selectToken}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-          />
-        </div>
-      )}
-      {/* Analyze Modal */}
-      {isAnalyzeModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-white">AI Analysis</h2>
-              <button
-                onClick={() => setIsAnalyzeModalOpen(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <X size={24} />
-              </button>
-            </div>
-            <div className="text-white">
-              {isAnalyzing ? (
-                <p>Analyzing chart data...</p>
-              ) : analysis ? (
-                <p className="whitespace-pre-wrap">{analysis}</p>
-              ) : (
-                <p>No analysis available.</p>
-              )}
-            </div>
-          </div>
-        </div>
+      {isTokenSelectModalOpen && (
+        <TokenSelectModal
+          tokens={tokens}
+          onClose={closeTokenSelectModal}
+          onSelect={handleTokenSelect}
+        />
       )}
     </div>
   );
@@ -485,126 +466,4 @@ function TokenInput({ label, amount, setAmount, token, openModal, readOnly = fal
       </div>
     </div>
   );
-}
-
-const TokenModal = React.forwardRef<HTMLDivElement, {
-  closeModal: () => void;
-  tokens: Token[];
-  selectToken: (token: Token) => void;
-  searchQuery: string;
-  setSearchQuery: (query: string) => void;
-}>(({ closeModal, tokens, selectToken, searchQuery, setSearchQuery }, ref) => {
-  const [filteredTokens, setFilteredTokens] = useState<Token[]>(tokens);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const filterTokens = async () => {
-      setIsSearching(true);
-      setSearchError(null);
-
-      if (searchQuery.trim() === '') {
-        setFilteredTokens(tokens);
-      } else if (isAddress(searchQuery)) {
-        // Search by address
-        try {
-          const tokenInfo = await fetchTokenInfo(searchQuery);
-          setFilteredTokens(tokenInfo ? [tokenInfo] : []);
-        } catch (error) {
-          setSearchError('Token not found');
-          setFilteredTokens([]);
-        }
-      } else {
-        // Search by name or symbol
-        const filtered = tokens.filter((token) =>
-          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          token.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        setFilteredTokens(filtered);
-      }
-
-      setIsSearching(false);
-    };
-
-    filterTokens();
-  }, [searchQuery, tokens]);
-
-  return (
-    <div ref={ref} className="bg-gray-800 w-96 rounded-lg p-6 space-y-4 max-h-[80vh] overflow-hidden flex flex-col">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Select a token</h2>
-        <button onClick={closeModal}>
-          <X className="text-gray-400" />
-        </button>
-      </div>
-      <div className="relative">
-        <input
-          type="text"
-          placeholder="Search name or paste address"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-gray-700 rounded-md py-2 px-4 pl-10 outline-none"
-        />
-        <Search className="absolute left-3 top-2.5 text-gray-400" />
-      </div>
-      <div className="space-y-2 overflow-y-auto flex-grow">
-        {isSearching ? (
-          <div className="text-center py-4">Searching...</div>
-        ) : searchError ? (
-          <div className="text-center py-4 text-red-500">{searchError}</div>
-        ) : (
-          <>
-            <h3 className="text-gray-400">Available tokens</h3>
-            {filteredTokens.map((token) => (
-              <button
-                key={token.address}
-                onClick={() => selectToken(token)}
-                className="flex items-center justify-between w-full p-2 hover:bg-gray-700 rounded-md transition-colors"
-              >
-                <div className="flex items-center space-x-3">
-                  {token.logoURI && (
-                    <div className="w-8 h-8 relative">
-                      <Image
-                        src={token.logoURI}
-                        alt={token.name}
-                        layout="fill"
-                        objectFit="cover"
-                        className="rounded-full"
-                      />
-                    </div>
-                  )}
-                  <div className="text-left">
-                    <div>{token.name}</div>
-                    <div className="text-gray-400">{token.symbol}</div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </>
-        )}
-      </div>
-    </div>
-  );
-});
-
-TokenModal.displayName = 'TokenModal';
-
-// Function to fetch token info by address
-async function fetchTokenInfo(address: string): Promise<Token | null> {
-  // Implement this function to fetch token info from an API or blockchain
-  // Return null if token not found
-  // This is a placeholder implementation
-  return null;
-}
-
-// Add this function at the end of the file
-async function fetchTokenPrice(tokenAddress: string): Promise<number> {
-  try {
-    const response = await fetch(`https://api.coingecko.com/api/v3/simple/token_price/ethereum?contract_addresses=${tokenAddress}&vs_currencies=usd`);
-    const data = await response.json();
-    return data[tokenAddress.toLowerCase()]?.usd || 0;
-  } catch (error) {
-    console.error("Error fetching token price:", error);
-    return 0;
-  }
 }

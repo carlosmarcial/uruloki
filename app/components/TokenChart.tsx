@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 
 const AdvancedRealTimeChart = dynamic(
@@ -18,68 +18,37 @@ interface TokenChartProps {
 }
 
 export interface TokenChartRef {
-  takeScreenshot: () => void;
   getChartData: () => Promise<any>;
 }
 
 const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreenshot }, ref) => {
-  const [chartSymbol, setChartSymbol] = useState('MEXC:TSUKAUSDT');
+  const chartRef = useRef<any>(null);
+
+  useImperativeHandle(ref, () => ({
+    getChartData: async () => {
+      // Implement getChartData logic here
+      return null;
+    }
+  }));
+
+  const [chartSymbol, setChartSymbol] = useState('');
   const [chartKey, setChartKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<any>(null);
 
   useEffect(() => {
-    if (token.symbol === 'TSUKA') {
-      setChartSymbol('MEXC:TSUKAUSDT');
-    } else {
-      setChartSymbol(`BINANCE:${token.symbol}USDT`);
-    }
-    setChartKey(prevKey => prevKey + 1);
-  }, [token]);
-
-  useImperativeHandle(ref, () => ({
-    takeScreenshot: () => {
-      if (containerRef.current) {
-        const iframe = containerRef.current.querySelector('iframe');
-        if (iframe) {
-          iframe.contentWindow?.postMessage({ action: 'takeScreenshot' }, '*');
-        } else {
-          console.error("Iframe not found");
-        }
+    const updateChartSymbol = async () => {
+      if (token.symbol === 'TSUKA') {
+        setChartSymbol('GECKOTERMINAL:TSUKAUSD');
       } else {
-        console.error("Container reference is not available");
+        const geckoTerminalSymbol = await getGeckoTerminalSymbol(token.symbol);
+        setChartSymbol(geckoTerminalSymbol);
       }
-    },
-    getChartData: () => {
-      return new Promise((resolve) => {
-        if (widgetRef.current) {
-          const widget = widgetRef.current;
-          widget.onChartReady(() => {
-            const chart = widget.activeChart();
-            const symbolInfo = chart.symbolInfo();
-            const visibleRange = chart.getVisibleRange();
-            const resolution = chart.resolution();
-            
-            chart.exportData({
-              from: visibleRange.from,
-              to: visibleRange.to,
-              includeTime: true,
-              includeSeries: true,
-              includeStudies: true,
-            }).then((data: any) => {
-              resolve({
-                symbol: symbolInfo.name,
-                timeframe: resolution,
-                data: data
-              });
-            });
-          });
-        } else {
-          resolve(null);
-        }
-      });
-    }
-  }));
+      setChartKey(prevKey => prevKey + 1);
+    };
+
+    updateChartSymbol();
+  }, [token]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -103,7 +72,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
           symbol={chartSymbol}
           theme="dark"
           autosize
-          interval="60"
+          interval="30"
           timezone="Etc/UTC"
           style="1"
           locale="en"
@@ -111,16 +80,16 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
           enable_publishing={false}
           allow_symbol_change={false}
           container_id={`tradingview_chart_${chartKey}`}
-          hide_side_toolbar={true} // Changed to true to hide the sidebar
+          hide_side_toolbar={false}
           hide_legend={false}
-          withdateranges={false}
+          withdateranges={true}
           range="1M"
           studies={[
             "MASimple@tv-basicstudies",
             "RSI@tv-basicstudies",
             "Volume@tv-basicstudies"
           ]}
-          ref={widgetRef}
+          ref={widgetRef as any}
         />
       </div>
     </div>
@@ -130,4 +99,18 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ token, onScreen
 TokenChart.displayName = 'TokenChart';
 
 export default TokenChart;
+
+// Helper function to check if a symbol is valid (you need to implement this)
+async function isSymbolValid(symbol: string): Promise<boolean> {
+  // Implement logic to check if the symbol is valid
+  // This might involve making an API call to TradingView or the respective exchange
+  // Return true if the symbol is valid, false otherwise
+  return true; // Placeholder implementation
+}
+
+async function getGeckoTerminalSymbol(tokenSymbol: string): Promise<string> {
+  // Implement logic to fetch the correct symbol from GeckoTerminal API
+  // This is a placeholder implementation
+  return `GECKOTERMINAL:${tokenSymbol}USD`;
+}
 
