@@ -31,7 +31,8 @@
         "./app/*"
       ],
       "wagmi": ["./node_modules/wagmi"]
-    }
+    },
+    "baseUrl": "."
   },
   "include": [
     "next-env.d.ts",

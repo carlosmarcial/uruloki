@@ -7,3 +7,11 @@ declare module 'stream-http';
 interface BigInt {
   toJSON(): string;
 }
+
+declare global {
+  interface Window {
+    Buffer: typeof Buffer;
+  }
+}
+
+export {};

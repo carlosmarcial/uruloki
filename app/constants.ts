@@ -1,5 +1,6 @@
 import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll } from 'wagmi/chains';
 import { Address } from 'viem';
+import { PublicKey } from '@solana/web3.js';
 
 export const MAGIC_CALLDATA_STRING = "f".repeat(130); // used when signing the eip712 message
 
@@ -230,3 +231,56 @@ export const ERC20_ABI = [
   },
   // ... you can add more functions if needed
 ];
+
+// Add Solana token interface
+export interface SolanaToken {
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoURI?: string;
+}
+
+// Add Solana tokens
+export const SOLANA_TOKENS: SolanaToken[] = [
+  {
+    address: 'So11111111111111111111111111111111111111112',
+    symbol: 'SOL',
+    name: 'Solana',
+    decimals: 9,
+    logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+  },
+  {
+    address: 'So11111111111111111111111111111111111111112',
+    symbol: 'WSOL',
+    name: 'Wrapped SOL',
+    decimals: 9,
+    logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+  },
+  // Add more Solana tokens as needed
+];
+
+export const SOLANA_TOKENS_BY_SYMBOL: { [symbol: string]: SolanaToken } = SOLANA_TOKENS.reduce((acc, token) => {
+  acc[token.symbol] = token;
+  return acc;
+}, {} as { [symbol: string]: SolanaToken });
+
+export const SOLANA_TOKENS_BY_ADDRESS: { [address: string]: SolanaToken } = SOLANA_TOKENS.reduce((acc, token) => {
+  acc[token.address] = token;
+  return acc;
+}, {} as { [address: string]: SolanaToken });
+
+export const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112';
+
+// Jupiter API endpoints
+export const JUPITER_QUOTE_API_URL = 'https://quote-api.jup.ag/v6/quote';
+export const JUPITER_SWAP_API_URL = 'https://quote-api.jup.ag/v6';
+export const JUPITER_SWAP_INSTRUCTIONS_API_URL = 'https://quote-api.jup.ag/v6/swap-instructions';
+
+// Solana RPC endpoint
+export const SOLANA_RPC_ENDPOINT = 'https://rpc.ankr.com/solana/f869eb9b2994f58e19944ab4fed6cd256f108b14553dcbadca18f6b0b6b7cb5f';
+
+// Remove or comment out the WebSocket endpoint
+// export const SOLANA_WS_ENDPOINT = 'wss://...';
+
+export const DEFAULT_SLIPPAGE_BPS = 100; // 1% slippage

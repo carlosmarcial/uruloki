@@ -41,3 +41,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+
+// Add this to your main application file (e.g., _app.tsx or index.tsx)
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    if (event.message === 'WebSocket connection failed') {
+      console.warn('WebSocket connection failed. Falling back to HTTP.');
+      // You can add additional logic here if needed
+      event.preventDefault(); // Prevent the error from being logged to the console
+    }
+  });
+}

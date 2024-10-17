@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         takerAddress,
       },
       headers: {
-        '0x-api-key': process.env.NEXT_PUBLIC_ZEROEX_API_KEY,
+        '0x-api-key': process.env.ZEROX_API_KEY
       }
     });
 
