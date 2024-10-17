@@ -277,10 +277,24 @@ export const JUPITER_QUOTE_API_URL = 'https://quote-api.jup.ag/v6/quote';
 export const JUPITER_SWAP_API_URL = 'https://quote-api.jup.ag/v6';
 export const JUPITER_SWAP_INSTRUCTIONS_API_URL = 'https://quote-api.jup.ag/v6/swap-instructions';
 
-// Solana RPC endpoint
-export const SOLANA_RPC_ENDPOINT = 'https://rpc.ankr.com/solana/f869eb9b2994f58e19944ab4fed6cd256f108b14553dcbadca18f6b0b6b7cb5f';
+// Solana RPC endpoints
+export const SOLANA_RPC_ENDPOINTS = {
+  http: process.env.NEXT_PUBLIC_SOLANA_RPC_HTTP || 'https://solana-mainnet.rpc.extrnode.com/2cec358b-e391-4b82-837c-9c661504501f',
+  ws: process.env.NEXT_PUBLIC_SOLANA_RPC_WS || 'wss://solana-mainnet.rpc.extrnode.com/2cec358b-e391-4b82-837c-9c661504501f'
+};
 
-// Remove or comment out the WebSocket endpoint
-// export const SOLANA_WS_ENDPOINT = 'wss://...';
+export const DEFAULT_SLIPPAGE_BPS = 500; // 5% slippage
 
-export const DEFAULT_SLIPPAGE_BPS = 100; // 1% slippage
+
+
+
+
+
+
+
+
+
+
+
+
+
