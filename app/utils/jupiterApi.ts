@@ -10,60 +10,20 @@ interface QuoteParams {
   inputMint: string;
   outputMint: string;
   amount: string;
-  slippageBps?: number;
-  feeBps?: number;
+  slippageBps: number;
+  maxAccounts?: number;
 }
 
-export async function fetchJupiterQuote(params: QuoteParams) {
-  const queryParams = new URLSearchParams({
-    inputMint: params.inputMint,
-    outputMint: params.outputMint,
-    amount: params.amount,
-  });
-
-  if (params.slippageBps !== undefined) {
-    queryParams.append('slippageBps', params.slippageBps.toString());
+export const fetchJupiterQuote = async (params: QuoteParams) => {
+  const { inputMint, outputMint, amount, slippageBps, maxAccounts } = params;
+  const endpoint = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippageBps}${maxAccounts ? `&maxAccounts=${maxAccounts}` : ''}`;
+  
+  const response = await fetch(endpoint);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
   }
-
-  if (params.feeBps !== undefined) {
-    queryParams.append('feeBps', params.feeBps.toString());
-  }
-
-  console.log('Fetching Jupiter quote with params:', params);
-  console.log('Full URL:', `${JUPITER_QUOTE_API_URL}?${queryParams}`);
-
-  try {
-    const response = await fetch(`${JUPITER_QUOTE_API_URL}?${queryParams}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log('Jupiter quote response:', data);
-
-    if (!data) {
-      throw new Error('Empty response from Jupiter API');
-    }
-
-    // Check if the response has the expected structure
-    if (!data.data && !data.outAmount) {
-      console.error('Unexpected response structure:', data);
-      throw new Error('Unexpected response structure from Jupiter API');
-    }
-
-    // If the response has a 'data' property, return that, otherwise return the whole response
-    return data.data || data;
-  } catch (error) {
-    console.error('Error fetching Jupiter quote:', error);
-    throw error;
-  }
-}
+  return await response.json();
+};
 
 export const fetchSwapInstructions = async ({
   quoteResponse,

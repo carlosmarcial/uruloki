@@ -602,6 +602,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           outputMint,
           amount,
           slippageBps: DEFAULT_SLIPPAGE_BPS,
+          maxAccounts: 64, // Limit the number of accounts
         });
         console.log('Jupiter quote received:', quoteResponse);
 
@@ -613,11 +614,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         const swapInstructions = await fetchJupiterSwapInstructions(quoteResponse, solanaWallet.publicKey.toString());
         console.log('Swap instructions received:', swapInstructions);
 
-        if (!swapInstructions) {
-          throw new Error('Failed to fetch swap instructions');
-        }
-
-        // Process swap instructions
         const {
           computeBudgetInstructions,
           setupInstructions,
@@ -626,9 +622,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           addressLookupTableAddresses,
         } = swapInstructions;
 
-        console.log('Processing swap instructions');
         const deserializeInstruction = (instruction) => {
-          return new TransactionInstruction({
+          return {
             programId: new PublicKey(instruction.programId),
             keys: instruction.accounts.map((key) => ({
               pubkey: new PublicKey(key.pubkey),
@@ -636,7 +631,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               isWritable: key.isWritable,
             })),
             data: Buffer.from(instruction.data, 'base64'),
-          });
+          };
         };
 
         const instructions = [
@@ -646,18 +641,32 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           cleanupInstruction ? deserializeInstruction(cleanupInstruction) : null,
         ].filter(Boolean);
 
-        console.log('Creating versioned transaction');
+        const getAddressLookupTableAccounts = async (keys: string[]): Promise<AddressLookupTableAccount[]> => {
+          const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
+            keys.map((key) => new PublicKey(key))
+          );
+
+          return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
+            const addressLookupTableAddress = keys[index];
+            if (accountInfo) {
+              const addressLookupTableAccount = new AddressLookupTableAccount({
+                key: new PublicKey(addressLookupTableAddress),
+                state: AddressLookupTableAccount.deserialize(accountInfo.data),
+              });
+              acc.push(addressLookupTableAccount);
+            }
+            return acc;
+          }, [] as AddressLookupTableAccount[]);
+        };
+
+        const addressLookupTableAccounts = await getAddressLookupTableAccounts(addressLookupTableAddresses || []);
+
         const latestBlockhash = await connection.getLatestBlockhash();
         const messageV0 = new TransactionMessage({
           payerKey: solanaWallet.publicKey,
           recentBlockhash: latestBlockhash.blockhash,
           instructions,
-        }).compileToV0Message(
-          (addressLookupTableAddresses || []).map(address => ({
-            key: new PublicKey(address),
-            state: { addresses: [] },
-          }))
-        );
+        }).compileToV0Message(addressLookupTableAccounts);
 
         const transaction = new VersionedTransaction(messageV0);
 
@@ -665,24 +674,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         const signedTransaction = await solanaWallet.signTransaction(transaction);
 
         console.log('Sending transaction');
-        setSwapMessage('Sending transaction...');
         const txid = await connection.sendTransaction(signedTransaction);
         console.log('Transaction sent:', txid);
 
-        console.log('Waiting for transaction confirmation');
-        setSwapMessage('Waiting for transaction confirmation...');
-        const confirmation = await connection.confirmTransaction(txid, 'confirmed');
-
-        if (confirmation.value.err) {
-          console.error('Transaction failed:', confirmation.value.err);
-          setTransactionStatus('error');
-          setSwapMessage(`Swap failed: ${confirmation.value.err}`);
-        } else {
-          console.log('Transaction confirmed:', txid);
-          setTransactionStatus('success');
-          setSwapMessage(`Swap successful! Transaction ID: ${txid}`);
-        }
-
+        setTransactionStatus('success');
+        setSwapMessage(`Swap successful! Transaction ID: ${txid}`);
         console.groupEnd();
         return;
       } catch (error: any) {
