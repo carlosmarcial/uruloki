@@ -28,7 +28,7 @@
         "./*"
       ],
       "@app/*": [
-        "./app/*"
+        "app/*"
       ],
       "wagmi": ["./node_modules/wagmi"]
     },

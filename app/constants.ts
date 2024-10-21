@@ -4,8 +4,8 @@ import { PublicKey } from '@solana/web3.js';
 
 export const MAGIC_CALLDATA_STRING = "f".repeat(130); // used when signing the eip712 message
 
-export const AFFILIATE_FEE = '0.01'; // 1% affiliate fee
 export const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
+export const AFFILIATE_FEE = '0.01'; // 1% affiliate fee
 
 export const MAINNET_EXCHANGE_PROXY = "0xdef1c0ded9bec7f1a1670819833240f027b25eff";
 
@@ -20,7 +20,19 @@ interface Token {
   logoURI: string;
 }
 
+// Add this near the top of the file
+export const ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+
+// Update MAINNET_TOKENS to include ETH
 export const MAINNET_TOKENS: Token[] = [
+  {
+    chainId: 1,
+    name: "Ether",
+    symbol: "ETH",
+    decimals: 18,
+    address: ETH_ADDRESS,
+    logoURI: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+  },
   {
     chainId: 1,
     name: "Wrapped Ether",
@@ -55,9 +67,10 @@ export const MAINNET_TOKENS: Token[] = [
   },
 ];
 
-export const MAINNET_TOKENS_BY_SYMBOL: { [symbol: string]: { address: `0x${string}`; decimals: number; symbol: string } } = {
-  WETH: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18, symbol: 'WETH' },
-  USDC: { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6, symbol: 'USDC' },
+// Update MAINNET_TOKENS_BY_SYMBOL
+export const MAINNET_TOKENS_BY_SYMBOL: { [symbol: string]: { address: string; decimals: number } } = {
+  ETH: { address: ETH_ADDRESS, decimals: 18 },
+  WETH: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18 },
   // Add other tokens as needed
 };
 
@@ -284,6 +297,29 @@ export const SOLANA_RPC_ENDPOINTS = {
 };
 
 export const DEFAULT_SLIPPAGE_BPS = 500; // 5% slippage
+
+// Update or add this constant
+export const API_SWAP_PRICE_URL = '/api/swap-price';
+
+// Ethereum-specific constants
+export const ETH_DEFAULT_SLIPPAGE_PERCENTAGE = 5; // 5% slippage for Ethereum
+export const ETH_MIN_SLIPPAGE_PERCENTAGE = 0.1;
+export const ETH_MAX_SLIPPAGE_PERCENTAGE = 50;
+
+// Solana-specific constants (already present, but listed here for comparison)
+export const SOLANA_MIN_SLIPPAGE_BPS = 10; // 0.1%
+export const SOLANA_MAX_SLIPPAGE_BPS = 5000; // 50%
+
+
+
+
+
+
+
+
+
+
+
 
 
 

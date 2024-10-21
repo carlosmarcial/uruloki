@@ -3,7 +3,7 @@ import { JUPITER_QUOTE_API_URL, JUPITER_SWAP_API_URL } from '../constants';
 import { PublicKey } from '@solana/web3.js';
 
 // Define the constants
-export const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112'; // Example address for native SOL
+export const NATIVE_SOL_MINT = '11111111111111111111111111111111';
 export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112'; // Example address for wrapped SOL
 
 interface QuoteParams {
@@ -18,11 +18,20 @@ export const fetchJupiterQuote = async (params: QuoteParams) => {
   const { inputMint, outputMint, amount, slippageBps, maxAccounts } = params;
   const endpoint = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippageBps}${maxAccounts ? `&maxAccounts=${maxAccounts}` : ''}`;
   
-  const response = await fetch(endpoint);
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+  console.log('Fetching Jupiter quote with URL:', endpoint);
+
+  try {
+    const response = await fetch(endpoint);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Jupiter API error response:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error in fetchJupiterQuote:', error);
+    throw error;
   }
-  return await response.json();
 };
 
 export const fetchSwapInstructions = async ({

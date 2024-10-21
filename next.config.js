@@ -1,6 +1,11 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  env: {
+    ZEROX_API_KEY: process.env.ZEROX_API_KEY,
+  },
   async headers() {
     return [
       {
@@ -13,6 +18,13 @@ const nextConfig = {
         ],
       },
     ];
+  },
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@app': path.resolve(__dirname, 'app'),
+    };
+    return config;
   },
 };
 

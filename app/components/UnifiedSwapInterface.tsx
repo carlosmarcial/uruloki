@@ -18,7 +18,7 @@ import TokenChart, { TokenChartRef } from './TokenChart';
 import TokenSelector from '../token-list/TokenSelector';
 import { fetchTokenList, Token } from '@/lib/fetchTokenList';
 import { fetchTokenPrice } from '../utils/priceUtils';
-import { EXCHANGE_PROXY_ABI, EXCHANGE_PROXY_ADDRESSES, ERC20_ABI } from '@app/constants';
+import { EXCHANGE_PROXY_ABI, EXCHANGE_PROXY_ADDRESSES, ERC20_ABI, MAINNET_TOKENS_BY_SYMBOL, ETH_ADDRESS, API_SWAP_PRICE_URL, FEE_RECIPIENT, AFFILIATE_FEE } from '@app/constants';
 import TokenSelectModal from '@/app/components/TokenSelectModal';
 import { simulateContract, waitForTransactionReceipt } from 'wagmi/actions';
 import ChainToggle from './ChainToggle';
@@ -47,6 +47,10 @@ import fetch from 'cross-fetch';
 import { solanaWebSocket } from '../utils/solanaWebSocket';
 import { checkTransactionOnExplorer } from '../utils/solanaUtils'; // Add this import
 import { fetchJupiterSwapInstructions } from '../utils/jupiterApi';
+import { ethers } from 'ethers';
+import EthSlippageSettings from './EthSlippageSettings';
+import { ETH_DEFAULT_SLIPPAGE_PERCENTAGE } from '@app/constants';
+import { PERMIT2_ADDRESS } from '@app/constants';
 
 // Add these animation variants
 const containerVariants = {
@@ -123,6 +127,8 @@ const isTransactionValid = (transaction: VersionedTransaction) => {
   return true;
 };
 
+const MAX_UINT256 = ethers.MaxUint256;
+
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
   setActiveChain: (chain: 'ethereum' | 'solana') => void;
@@ -180,14 +186,32 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const exchangeProxyAddress = EXCHANGE_PROXY_ADDRESSES[chainId];
 
+  const [tokenAllowances, setTokenAllowances] = useState<{[address: string]: bigint}>({});
+
   const { data: allowance, refetch: refetchAllowance } = useContractRead({
-    address: sellToken?.address,
+    address: sellToken?.address as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: [address, exchangeProxyAddress],
+    args: [address as `0x${string}`, PERMIT2_ADDRESS],
+    enabled: !!sellToken && !!address,
     watch: true,
-    enabled: !!sellToken && !!address && !!chainId && !!exchangeProxyAddress && activeChain === 'ethereum',
   });
+
+  useEffect(() => {
+    if (sellToken && allowance !== undefined) {
+      setTokenAllowances(prev => ({
+        ...prev,
+        [sellToken.address]: allowance as bigint
+      }));
+    }
+  }, [sellToken, allowance]);
+
+  const isApprovalNeeded = useCallback(() => {
+    if (!sellToken || !sellAmount) return false;
+    const currentAllowance = tokenAllowances[sellToken.address] || BigInt(0);
+    const requiredAllowance = ethers.parseUnits(sellAmount, sellToken.decimals);
+    return currentAllowance < requiredAllowance;
+  }, [sellToken, sellAmount, tokenAllowances]);
 
   const { writeContract: approveToken, data: approveData } = useWriteContract();
 
@@ -230,14 +254,23 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   }, [isApproveSuccess, refetchAllowance]);
 
-  const handleApprove = useCallback(() => {
-    if (approveRequest) {
-      approveToken(approveRequest);
-      setApprovalState('approving');
+  const handleApprove = async () => {
+    if (!sellToken) return;
+    
+    try {
+      const signer = await getSigner(); // Make sure you have a function to get the signer
+      const contract = new ethers.Contract(sellToken.address, ERC20_ABI, signer);
+      const tx = await contract.approve(PERMIT2_ADDRESS, MAX_UINT256);
+      await tx.wait();
+      await refetchAllowance();
+    } catch (error) {
+      console.error('Error approving token:', error);
     }
-  }, [approveRequest, approveToken]);
+  };
 
   const [swapError, setSwapError] = useState<string | null>(null);
+
+  const [ethSlippage, setEthSlippage] = useState(ETH_DEFAULT_SLIPPAGE_PERCENTAGE);
 
   const handleSwap = async () => {
     console.log('handleSwap function called');
@@ -247,66 +280,99 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
 
     try {
-      console.log('Fetching swap quote with params:', {
-        chainId,
-        sellToken: sellToken.address,
-        buyToken: buyToken.address,
-        sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
-        takerAddress: address,
-      });
+      if (activeChain === 'ethereum') {
+        // Ethereum swap logic
+        const sellTokenAddress = sellToken.address === ETH_ADDRESS 
+          ? MAINNET_TOKENS_BY_SYMBOL.WETH.address
+          : sellToken.address;
+        const buyTokenAddress = buyToken.address === ETH_ADDRESS 
+          ? MAINNET_TOKENS_BY_SYMBOL.WETH.address
+          : buyToken.address;
 
-      const response = await axios.get('/api/swap-price', {
-        params: {
-          chainId,
-          sellToken: sellToken.address,
-          buyToken: buyToken.address,
-          sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
-          takerAddress: address,
-          affiliateAddress: '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6',
-          affiliateFee: '0.01', // 1% fee
+        // Check if approval is needed for non-WETH tokens
+        if (sellTokenAddress.toLowerCase() !== MAINNET_TOKENS_BY_SYMBOL?.WETH?.address?.toLowerCase()) {
+          const allowance = await checkAllowance(sellTokenAddress, address, EXCHANGE_PROXY_ADDRESSES[chainId]);
+          const sellAmountBigInt = ethers.parseUnits(sellAmount, sellToken.decimals);
+          
+          if (allowance < sellAmountBigInt) {
+            console.log('Approval needed. Requesting approval...');
+            await requestApproval(sellTokenAddress, EXCHANGE_PROXY_ADDRESSES[chainId], sellAmountBigInt);
+          }
         }
-      });
 
-      console.log('Swap quote received:', response.data);
+        console.log('Fetching swap quote with params:', {
+          chainId,
+          sellToken: sellTokenAddress,
+          buyToken: buyTokenAddress,
+          sellAmount: ethers.parseUnits(sellAmount, sellToken.decimals).toString(),
+          takerAddress: address,
+          affiliateAddress: FEE_RECIPIENT,
+          affiliateFee: AFFILIATE_FEE,
+        });
 
-      const quote = response.data;
+        const response = await axios.get(API_SWAP_PRICE_URL, {
+          params: {
+            chainId,
+            sellToken: sellTokenAddress,
+            buyToken: buyTokenAddress,
+            sellAmount: ethers.parseUnits(sellAmount, sellToken.decimals).toString(),
+            takerAddress: address,
+            affiliateAddress: FEE_RECIPIENT,
+            affiliateFee: AFFILIATE_FEE,
+          }
+        });
 
-      // Update the UI with the buy amount
-      setBuyAmount(quote.buyAmount);
+        console.log('Swap quote received:', response.data);
+        console.log('Affiliate fee details:', response.data.fees);
 
-      let signature: string | undefined;
-      if (quote.permit2 && quote.permit2.eip712) {
-        // Sign the permit2 message
-        signature = await signTypedDataAsync(quote.permit2.eip712);
-        console.log('Signature:', signature);
-      } else {
-        console.log('No permit2 data in the quote, proceeding without signature');
+        // Add this check
+        if (response.data.estimatedGas > 1000000) {
+          throw new Error('Estimated gas is too high, swap may fail');
+        }
+
+        // Modify the quote to unwrap WETH if buying ETH
+        if (buyToken.address === ETH_ADDRESS) {
+          console.log('Modifying quote to unwrap WETH to ETH');
+          response.data.to = EXCHANGE_PROXY_ADDRESSES[chainId];
+          response.data.data = response.data.data.concat(
+            ethers.AbiCoder.defaultAbiCoder().encode(['address', 'uint256'], [MAINNET_TOKENS_BY_SYMBOL.WETH.address, response.data.buyAmount])
+          );
+        }
+
+        // Log the final transaction data
+        console.log('Final transaction data:', {
+          to: response.data.to,
+          data: response.data.data,
+          value: response.data.value,
+          gasPrice: response.data.gasPrice,
+          gasLimit: response.data.estimatedGas
+        });
+
+        // Send the transaction
+        const { hash } = await sendTransactionAsync({
+          to: response.data.to as `0x${string}`,
+          data: response.data.data as `0x${string}`,
+          value: BigInt(response.data.value || 0),
+          gasLimit: BigInt(Math.floor(Number(response.data.estimatedGas) * 1.1)), // Add 10% buffer
+        });
+
+        console.log('Transaction sent:', hash);
+
+        // Wait for the transaction to be mined
+        const receipt = await waitForTransactionReceipt({ hash });
+        console.log('Transaction mined:', receipt);
+
+        if (receipt.status === 'success') {
+          console.log(`Swap completed. A ${AFFILIATE_FEE} fee should have been sent to ${FEE_RECIPIENT}`);
+          console.log('Transaction hash:', hash);
+        } else {
+          throw new Error('Transaction failed');
+        }
+
+      } else if (activeChain === 'solana') {
+        // Solana swap logic
+        await executeSolanaSwap();
       }
-
-      // Prepare transaction data
-      let txData = quote.data;
-      if (signature) {
-        const MAGIC_CALLDATA_STRING = "f".repeat(130);
-        txData = quote.data.replace(MAGIC_CALLDATA_STRING, signature.slice(2)) as `0x${string}`;
-      }
-
-      // Send the transaction
-      const { hash } = await sendTransactionAsync({
-        to: quote.to as `0x${string}`,
-        data: txData,
-        value: BigInt(quote.value || 0),
-        gas: BigInt(quote.gas || 0),
-      });
-
-      console.log('Transaction sent:', hash);
-
-      // Wait for the transaction to be mined
-      const receipt = await waitForTransactionReceipt({ hash });
-      console.log('Transaction mined:', receipt);
-
-      // Update UI or state to reflect successful swap
-      // ...
-
     } catch (error) {
       console.error('Swap failed:', error);
       if (axios.isAxiosError(error) && error.response) {
@@ -314,7 +380,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         console.error('Error status:', error.response.status);
         console.error('Error headers:', error.response.headers);
       }
-      setSwapError(error.response?.data?.error || error.message || 'An unknown error occurred');
+      setSwapError(error instanceof Error ? error.message : 'An unknown error occurred');
     }
   };
 
@@ -327,6 +393,20 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const fetchTokens = useCallback(async () => {
     const fetchedTokens = await fetchTokenList(chainId);
+
+    // If chainId is Ethereum mainnet, add ETH
+    if (chainId === 1) {
+      const ethToken: Token = {
+        chainId: 1,
+        name: 'Ether',
+        symbol: 'ETH',
+        decimals: 18,
+        address: 'ETH', // Use 'ETH' as a placeholder address for native ETH
+        logoURI: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+      };
+      fetchedTokens.unshift(ethToken); // Add ETH to the beginning of the token list
+    }
+
     setTokens(fetchedTokens);
   }, [chainId]);
 
@@ -477,48 +557,50 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     if (sellToken && buyToken && sellAmount && parseFloat(sellAmount) > 0) {
       setIsLoadingPrice(true);
       try {
-        const inputMint = getInputMint(sellToken.address);
-        const outputMint = getOutputMint(buyToken.address);
-        const amount = (parseFloat(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
-
-        console.log('Fetching quote with params:', {
-          inputMint,
-          outputMint,
-          amount,
-          slippageBps: slippageTolerance,
-        });
-        
-        const quoteResponse = await fetchJupiterQuote({
-          inputMint,
-          outputMint,
-          amount,
-          slippageBps: slippageTolerance,
-        });
-        
-        console.log('Quote response:', quoteResponse);
-        
-        if (quoteResponse.outAmount) {
-          setBuyAmount(formatTokenAmount(quoteResponse.outAmount, buyToken.decimals));
-        } else if (quoteResponse.error) {
-          console.error('Jupiter API error:', quoteResponse.error);
-          setBuyAmount('');
-          setSwapMessage(`Swap not available: ${quoteResponse.error}`);
-        } else {
-          console.error('Invalid quote response:', quoteResponse);
-          setBuyAmount('');
-          setSwapMessage('Error fetching price. Invalid response from API.');
+        if (activeChain === 'ethereum') {
+          // Ethereum price fetching logic
+          const response = await axios.get(API_SWAP_PRICE_URL, {
+            params: {
+              chainId,
+              sellToken: sellToken.address,
+              buyToken: buyToken.address,
+              sellAmount: ethers.parseUnits(sellAmount, sellToken.decimals).toString(),
+              takerAddress: address,
+              affiliateAddress: '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6',
+              affiliateFee: '0.01', // 1% fee
+            }
+          });
+          setBuyAmount(formatUnits(response.data.buyAmount, buyToken.decimals));
+        } else if (activeChain === 'solana') {
+          // Solana price fetching logic
+          const inputMint = getInputMint(sellToken.address);
+          const outputMint = getOutputMint(buyToken.address);
+          const amount = (parseFloat(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
+          
+          const quoteResponse = await fetchJupiterQuote({
+            inputMint,
+            outputMint,
+            amount,
+            slippageBps: slippageTolerance,
+          });
+          
+          if (quoteResponse.outAmount) {
+            setBuyAmount(formatTokenAmount(quoteResponse.outAmount, buyToken.decimals));
+          } else {
+            throw new Error('Invalid quote response');
+          }
         }
       } catch (error) {
         console.error('Error fetching quote:', error);
         setBuyAmount('');
-        setSwapMessage(`Error fetching price: ${error.message}`);
+        setSwapMessage(`Error fetching price: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsLoadingPrice(false);
       }
     } else {
       setBuyAmount('');
     }
-  }, [sellToken, buyToken, sellAmount, slippageTolerance]);
+  }, [sellToken, buyToken, sellAmount, slippageTolerance, activeChain, chainId, address]);
 
   const debouncedUpdateBuyAmount = useCallback(debounce(updateBuyAmount, 500), [updateBuyAmount]);
 
@@ -578,120 +660,105 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const executeSolanaSwap = async () => {
     console.group('Solana Swap Execution');
-    let attempts = 0;
-    const maxAttempts = 2;
-    const baseDelay = 2000; // 2 seconds
+    try {
+      setTransactionStatus('pending');
+      checkWalletReady();
 
-    while (attempts < maxAttempts) {
-      try {
-        setTransactionStatus('pending');
-        console.log(`Attempt ${attempts + 1} of ${maxAttempts}`);
-        checkWalletReady();
-
-        if (!sellToken || !buyToken || !sellAmount || !solanaWallet.publicKey) {
-          throw new Error('Missing required swap parameters');
-        }
-
-        const inputMint = getInputMint(sellToken.address);
-        const outputMint = getOutputMint(buyToken.address);
-        const amount = (parseFloat(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
-
-        console.log('Fetching Jupiter quote');
-        const quoteResponse = await fetchJupiterQuote({
-          inputMint,
-          outputMint,
-          amount,
-          slippageBps: DEFAULT_SLIPPAGE_BPS,
-          maxAccounts: 64, // Limit the number of accounts
-        });
-        console.log('Jupiter quote received:', quoteResponse);
-
-        if (!quoteResponse) {
-          throw new Error('Invalid quote response');
-        }
-
-        console.log('Fetching swap instructions');
-        const swapInstructions = await fetchJupiterSwapInstructions(quoteResponse, solanaWallet.publicKey.toString());
-        console.log('Swap instructions received:', swapInstructions);
-
-        const {
-          computeBudgetInstructions,
-          setupInstructions,
-          swapInstruction,
-          cleanupInstruction,
-          addressLookupTableAddresses,
-        } = swapInstructions;
-
-        const deserializeInstruction = (instruction) => {
-          return {
-            programId: new PublicKey(instruction.programId),
-            keys: instruction.accounts.map((key) => ({
-              pubkey: new PublicKey(key.pubkey),
-              isSigner: key.isSigner,
-              isWritable: key.isWritable,
-            })),
-            data: Buffer.from(instruction.data, 'base64'),
-          };
-        };
-
-        const instructions = [
-          ...(computeBudgetInstructions || []).map(deserializeInstruction),
-          ...(setupInstructions || []).map(deserializeInstruction),
-          deserializeInstruction(swapInstruction),
-          cleanupInstruction ? deserializeInstruction(cleanupInstruction) : null,
-        ].filter(Boolean);
-
-        const getAddressLookupTableAccounts = async (keys: string[]): Promise<AddressLookupTableAccount[]> => {
-          const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
-            keys.map((key) => new PublicKey(key))
-          );
-
-          return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
-            const addressLookupTableAddress = keys[index];
-            if (accountInfo) {
-              const addressLookupTableAccount = new AddressLookupTableAccount({
-                key: new PublicKey(addressLookupTableAddress),
-                state: AddressLookupTableAccount.deserialize(accountInfo.data),
-              });
-              acc.push(addressLookupTableAccount);
-            }
-            return acc;
-          }, [] as AddressLookupTableAccount[]);
-        };
-
-        const addressLookupTableAccounts = await getAddressLookupTableAccounts(addressLookupTableAddresses || []);
-
-        const latestBlockhash = await connection.getLatestBlockhash();
-        const messageV0 = new TransactionMessage({
-          payerKey: solanaWallet.publicKey,
-          recentBlockhash: latestBlockhash.blockhash,
-          instructions,
-        }).compileToV0Message(addressLookupTableAccounts);
-
-        const transaction = new VersionedTransaction(messageV0);
-
-        console.log('Requesting transaction signature');
-        const signedTransaction = await solanaWallet.signTransaction(transaction);
-
-        console.log('Sending transaction');
-        const txid = await connection.sendTransaction(signedTransaction);
-        console.log('Transaction sent:', txid);
-
-        setTransactionStatus('success');
-        setSwapMessage(`Swap successful! Transaction ID: ${txid}`);
-        console.groupEnd();
-        return;
-      } catch (error: any) {
-        console.error(`Attempt ${attempts + 1} failed:`, error);
-        attempts++;
-        if (attempts >= maxAttempts) {
-          setTransactionStatus('error');
-          setSwapMessage(`Swap failed after ${maxAttempts} attempts: ${error.message}. Please try again.`);
-          console.groupEnd();
-          throw error;
-        }
-        await new Promise(resolve => setTimeout(resolve, baseDelay * attempts));
+      if (!sellToken || !buyToken || !sellAmount || !solanaWallet.publicKey) {
+        throw new Error('Missing required swap parameters');
       }
+
+      const inputMint = getInputMint(sellToken.address);
+      const outputMint = getOutputMint(buyToken.address);
+      const amount = (parseFloat(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
+
+      console.log('Fetching Jupiter quote');
+      const quoteResponse = await fetchJupiterQuote({
+        inputMint,
+        outputMint,
+        amount,
+        slippageBps: DEFAULT_SLIPPAGE_BPS,
+        maxAccounts: 64,
+      });
+      console.log('Jupiter quote received:', quoteResponse);
+
+      if (!quoteResponse) {
+        throw new Error('Invalid quote response');
+      }
+
+      console.log('Fetching swap instructions');
+      const swapInstructions = await fetchJupiterSwapInstructions(quoteResponse, solanaWallet.publicKey.toString());
+      console.log('Swap instructions received:', swapInstructions);
+
+      const {
+        computeBudgetInstructions,
+        setupInstructions,
+        swapInstruction,
+        cleanupInstruction,
+        addressLookupTableAddresses,
+      } = swapInstructions;
+
+      const deserializeInstruction = (instruction) => {
+        return {
+          programId: new PublicKey(instruction.programId),
+          keys: instruction.accounts.map((key) => ({
+            pubkey: new PublicKey(key.pubkey),
+            isSigner: key.isSigner,
+            isWritable: key.isWritable,
+          })),
+          data: Buffer.from(instruction.data, 'base64'),
+        };
+      };
+
+      const instructions = [
+        ...(computeBudgetInstructions || []).map(deserializeInstruction),
+        ...(setupInstructions || []).map(deserializeInstruction),
+        deserializeInstruction(swapInstruction),
+        cleanupInstruction ? deserializeInstruction(cleanupInstruction) : null,
+      ].filter(Boolean);
+
+      const getAddressLookupTableAccounts = async (keys: string[]): Promise<AddressLookupTableAccount[]> => {
+        const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
+          keys.map((key) => new PublicKey(key))
+        );
+
+        return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
+          const addressLookupTableAddress = keys[index];
+          if (accountInfo) {
+            const addressLookupTableAccount = new AddressLookupTableAccount({
+              key: new PublicKey(addressLookupTableAddress),
+              state: AddressLookupTableAccount.deserialize(accountInfo.data),
+            });
+            acc.push(addressLookupTableAccount);
+          }
+          return acc;
+        }, [] as AddressLookupTableAccount[]);
+      };
+
+      const addressLookupTableAccounts = await getAddressLookupTableAccounts(addressLookupTableAddresses || []);
+
+      const latestBlockhash = await connection.getLatestBlockhash();
+      const messageV0 = new TransactionMessage({
+        payerKey: solanaWallet.publicKey,
+        recentBlockhash: latestBlockhash.blockhash,
+        instructions,
+      }).compileToV0Message(addressLookupTableAccounts);
+
+      const transaction = new VersionedTransaction(messageV0);
+
+      console.log('Requesting transaction signature');
+      const signedTransaction = await solanaWallet.signTransaction(transaction);
+
+      console.log('Sending transaction');
+      const txid = await connection.sendTransaction(signedTransaction);
+      console.log('Transaction sent:', txid);
+
+      setTransactionStatus('success');
+      setSwapMessage(`Swap successful! Transaction ID: ${txid}`);
+    } catch (error) {
+      console.error('Swap execution failed:', error);
+      setSwapStatus('error');
+      setSwapMessage(`Swap failed: ${error.message || 'Unknown error'}`);
     }
     console.groupEnd();
   };
@@ -963,6 +1030,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           {activeChain === 'ethereum' ? (
             <div className="flex-grow bg-gray-900 rounded-lg">
               {renderEthereumSwapInterface()}
+              <EthSlippageSettings slippage={ethSlippage} setSlippage={setEthSlippage} />
             </div>
           ) : (
             <div className="flex-grow bg-gray-900 rounded-lg">
@@ -1033,3 +1101,62 @@ async function confirmTransaction(connection: Connection, signature: string, tim
   
   throw new Error(`Transaction was not confirmed in ${timeout / 1000} seconds`);
 }
+
+// Add these helper functions
+const checkAllowance = async (tokenAddress: string, ownerAddress: string, spenderAddress: string) => {
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  const contract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+  return await contract.allowance(ownerAddress, spenderAddress);
+};
+
+const requestApproval = async (tokenAddress: string, spenderAddress: string, amount: bigint) => {
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  const signer = await provider.getSigner();
+  const contract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+  const tx = await contract.approve(spenderAddress, amount);
+  await tx.wait();
+};
+
+const getSigner = async () => {
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  return provider.getSigner();
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
