@@ -199,7 +199,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     address: sellToken?.address as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: [address as `0x${string}`, PERMIT2_ADDRESS],
+    args: [address as `0x${string}`, exchangeProxyAddress],
     enabled: !!sellToken && !!address,
     watch: true,
   });
@@ -292,8 +292,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       const sellAmountInWei = parseUnits(sellAmount, sellToken.decimals);
 
       let swapParams: any = {
-        sellToken: sellToken.address === WETH_ADDRESS ? ETH_ADDRESS : sellToken.address,
-        buyToken: buyToken.address === WETH_ADDRESS ? ETH_ADDRESS : buyToken.address,
+        sellToken: sellToken.address,
+        buyToken: buyToken.address,
         sellAmount: sellAmountInWei.toString(),
         takerAddress: address,
         slippagePercentage: ethSlippage / 100,
@@ -310,35 +310,27 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         throw new Error('Invalid quote response: missing transaction data');
       }
 
-      // Check if the token is ETH or WETH
-      if (sellToken.address !== ETH_ADDRESS && sellToken.address !== WETH_ADDRESS) {
+      // Check if the token is ETH
+      if (sellToken.address !== ETH_ADDRESS) {
         console.log('Checking allowance for token:', sellToken.address);
-        
+
         let allowance;
         try {
           allowance = await publicClient.readContract({
             address: sellToken.address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'allowance',
-            args: [address, PERMIT2_ADDRESS],
+            args: [address, exchangeProxyAddress],
           });
-          console.log('Current allowance:', allowance.toString());
-        } catch (error) {
-          console.error('Error reading allowance:', error);
-          console.error('Sell token address:', sellToken.address);
-          console.error('ERC20_ABI:', ERC20_ABI);
-          throw new Error('Failed to read token allowance');
-        }
 
-        if (allowance < sellAmountInWei) {
-          console.log(`Setting approval for Permit2 to spend ${sellToken.symbol}...`);
-          
-          try {
+          if (allowance < sellAmountInWei) {
+            console.log(`Setting approval for Exchange Proxy to spend ${sellToken.symbol}...`);
+
             const { request } = await publicClient.simulateContract({
               address: sellToken.address as `0x${string}`,
               abi: ERC20_ABI,
               functionName: 'approve',
-              args: [PERMIT2_ADDRESS, sellAmountInWei],
+              args: [exchangeProxyAddress, MAX_ALLOWANCE],
               account: address,
             });
 
@@ -347,21 +339,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
             const receipt = await publicClient.waitForTransactionReceipt({ hash });
             console.log('Approval transaction confirmed:', receipt);
-
-            if (receipt.status !== 'success') {
-              throw new Error('Approval transaction failed');
-            }
-
-            console.log(`Approval set successfully for ${sellToken.symbol}`);
-          } catch (error) {
-            console.error('Error setting approval:', error);
-            throw new Error('Failed to set token approval');
           }
-        } else {
-          console.log(`Sufficient allowance already set for ${sellToken.symbol}`);
+        } catch (error) {
+          console.error('Error checking or setting approval:', error);
+          throw new Error('Failed to set token approval');
         }
-      } else if (sellToken.address === WETH_ADDRESS) {
-        console.log('Selling WETH, no approval needed');
       } else {
         console.log('Selling ETH, no approval needed');
       }

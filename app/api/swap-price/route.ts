@@ -5,8 +5,8 @@ import { ETH_ADDRESS, WETH_ADDRESS } from '@app/constants';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    let sellToken = searchParams.get('sellToken');
-    let buyToken = searchParams.get('buyToken');
+    const sellToken = searchParams.get('sellToken');
+    const buyToken = searchParams.get('buyToken');
     const sellAmount = searchParams.get('sellAmount');
     const takerAddress = searchParams.get('takerAddress');
     const slippagePercentage = searchParams.get('slippagePercentage');
@@ -14,10 +14,6 @@ export async function GET(request: Request) {
     if (!sellToken || !buyToken || !sellAmount || !takerAddress) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
-
-    // Replace WETH with ETH for the API request
-    if (sellToken === WETH_ADDRESS) sellToken = ETH_ADDRESS;
-    if (buyToken === WETH_ADDRESS) buyToken = ETH_ADDRESS;
 
     const apiUrl = `https://api.0x.org/swap/v1/quote`;
 
@@ -36,7 +32,6 @@ export async function GET(request: Request) {
       },
     });
 
-    // Forward all fields from the 0x API response
     return NextResponse.json(response.data);
   } catch (error) {
     console.error('Error fetching quote:', error.response?.data || error.message);
