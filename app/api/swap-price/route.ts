@@ -1,92 +1,48 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
-import { ETH_ADDRESS } from '@app/constants';
-
-const ZEROX_BASE_URLS: { [chainId: number]: string } = {
-  1: 'https://api.0x.org', // Ethereum Mainnet
-  137: 'https://polygon.api.0x.org', // Polygon
-  10: 'https://optimism.api.0x.org', // Optimism
-  42161: 'https://arbitrum.api.0x.org', // Arbitrum
-  8453: 'https://base.api.0x.org', // Base
-  43114: 'https://avalanche.api.0x.org', // Avalanche
-  56: 'https://bsc.api.0x.org', // BSC
-  59144: 'https://linea.api.0x.org', // Linea
-  5000: 'https://mantle.api.0x.org', // Mantle
-  534352: 'https://scroll.api.0x.org', // Scroll
-};
-
-export const ETH_DEFAULT_SLIPPAGE_PERCENTAGE = 5; // 5% slippage for Ethereum
+import { ETH_ADDRESS, WETH_ADDRESS } from '@app/constants';
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const chainIdStr = searchParams.get('chainId');
-  const chainId = chainIdStr ? parseInt(chainIdStr, 10) : null;
-  const sellToken = searchParams.get('sellToken');
-  const buyToken = searchParams.get('buyToken');
-  const sellAmount = searchParams.get('sellAmount');
-  const takerAddress = searchParams.get('takerAddress');
-  const affiliateAddress = searchParams.get('affiliateAddress');
-  const affiliateFee = searchParams.get('affiliateFee');
-  const ethSlippagePercentage = searchParams.get('ethSlippagePercentage') || '0.01'; // Default to 1% if not provided
-
-  if (!chainId || !sellToken || !buyToken || !sellAmount || !takerAddress) {
-    return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
-  }
-
-  const baseUrl = ZEROX_BASE_URLS[chainId];
-  if (!baseUrl) {
-    return NextResponse.json({ error: 'Unsupported chainId' }, { status: 400 });
-  }
-
-  if (!process.env.ZEROX_API_KEY) {
-    console.error('ZEROX_API_KEY is not set in environment variables');
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
-  }
-
   try {
-    console.log('Fetching swap quote with params:', {
-      chainId,
-      sellToken,
-      buyToken,
-      sellAmount,
-      takerAddress,
-      affiliateAddress,
-      affiliateFee,
-    });
+    const { searchParams } = new URL(request.url);
+    let sellToken = searchParams.get('sellToken');
+    let buyToken = searchParams.get('buyToken');
+    const sellAmount = searchParams.get('sellAmount');
+    const takerAddress = searchParams.get('takerAddress');
+    const slippagePercentage = searchParams.get('slippagePercentage');
 
-    const response = await axios.get(`${baseUrl}/swap/v1/quote`, {
+    if (!sellToken || !buyToken || !sellAmount || !takerAddress) {
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
+    }
+
+    // Replace WETH with ETH for the API request
+    if (sellToken === WETH_ADDRESS) sellToken = ETH_ADDRESS;
+    if (buyToken === WETH_ADDRESS) buyToken = ETH_ADDRESS;
+
+    const apiUrl = `https://api.0x.org/swap/v1/quote`;
+
+    const response = await axios.get(apiUrl, {
       params: {
-        sellToken: sellToken === ETH_ADDRESS ? 'ETH' : sellToken,
-        buyToken: buyToken === ETH_ADDRESS ? 'ETH' : buyToken,
+        sellToken,
+        buyToken,
         sellAmount,
         takerAddress,
-        affiliateAddress,
-        affiliateFee,
-        skipValidation: false,
-        slippagePercentage: parseFloat(ethSlippagePercentage),
-        enableSlippageProtection: true,
+        slippagePercentage,
+        affiliateAddress: process.env.AFFILIATE_ADDRESS,
+        skipValidation: true,
       },
       headers: {
-        '0x-api-key': process.env.ZEROX_API_KEY
-      }
+        '0x-api-key': process.env.ZEROX_API_KEY,
+      },
     });
 
-    console.log('Swap quote response:', response.data);
-
-    // Add some basic validation
-    if (response.data.estimatedGas > 1000000) {
-      return NextResponse.json({ error: 'Estimated gas is too high' }, { status: 400 });
-    }
-
+    // Forward all fields from the 0x API response
     return NextResponse.json(response.data);
   } catch (error) {
-    console.error('Error fetching quote:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      console.error('Response data:', error.response.data);
-      console.error('Response status:', error.response.status);
-      console.error('Response headers:', error.response.headers);
-      return NextResponse.json({ error: 'Error fetching swap quote', details: error.response.data }, { status: error.response.status });
-    }
-    return NextResponse.json({ error: 'Error fetching swap quote', message: error.message }, { status: 500 });
+    console.error('Error fetching quote:', error.response?.data || error.message);
+    return NextResponse.json(
+      { error: 'Error fetching quote', details: error.response?.data || error.message },
+      { status: error.response?.status || 500 }
+    );
   }
 }

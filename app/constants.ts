@@ -11,6 +11,18 @@ export const MAINNET_EXCHANGE_PROXY = "0xdef1c0ded9bec7f1a1670819833240f027b25ef
 
 export const MAX_ALLOWANCE = BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935");
 
+
+// Add the 0x API base URLs for different networks
+export const ZEROX_BASE_URLS: { [chainId: number]: string } = {
+  1: 'https://api.0x.org', // Ethereum Mainnet
+  56: 'https://bsc.api.0x.org', // Binance Smart Chain
+  137: 'https://polygon.api.0x.org', // Polygon
+  42161: 'https://arbitrum.api.0x.org', // Arbitrum
+  10: 'https://optimism.api.0x.org', // Optimism
+  43114: 'https://avalanche.api.0x.org', // Avalanche
+  // Add more networks as needed
+};
+
 interface Token {
   name: string;
   address: Address;
@@ -22,6 +34,8 @@ interface Token {
 
 // Add this near the top of the file
 export const ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+export const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'; // Ethereum Mainnet WETH address
+export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
 // Update MAINNET_TOKENS to include ETH
 export const MAINNET_TOKENS: Token[] = [
@@ -94,7 +108,7 @@ export const SUPPORTED_CHAINS = [
 
 export const TOKEN_LIST_URL = 'https://tokens.coingecko.com/uniswap/all.json';
 
-export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+
 
 export const GAS_LIMIT_BUFFER = 1.1; // 10% buffer
 
@@ -254,6 +268,15 @@ export interface SolanaToken {
   logoURI?: string;
 }
 
+// Add this new constant
+export const MANUAL_WETH_TOKEN = {
+  address: WETH_ADDRESS,
+  symbol: 'WETH',
+  name: 'Wrapped Ether',
+  decimals: 18,
+  logoURI: 'https://ethereum-optimism.github.io/data/WETH/logo.png' // You can use a different logo URL if preferred
+};
+
 // Add Solana tokens
 export const SOLANA_TOKENS: SolanaToken[] = [
   {
@@ -309,24 +332,6 @@ export const ETH_MAX_SLIPPAGE_PERCENTAGE = 50;
 // Solana-specific constants (already present, but listed here for comparison)
 export const SOLANA_MIN_SLIPPAGE_BPS = 10; // 0.1%
 export const SOLANA_MAX_SLIPPAGE_BPS = 5000; // 50%
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
