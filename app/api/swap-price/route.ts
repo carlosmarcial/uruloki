@@ -1,42 +1,59 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
-import { ETH_ADDRESS, WETH_ADDRESS } from '@app/constants';
+import { ZEROX_BASE_URLS, FEE_RECIPIENT, AFFILIATE_FEE } from '@/app/constants';
 
 export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const chainId = searchParams.get('chainId');
+  const sellToken = searchParams.get('sellToken');
+  const buyToken = searchParams.get('buyToken');
+  const sellAmount = searchParams.get('sellAmount');
+
   try {
-    const { searchParams } = new URL(request.url);
-    const sellToken = searchParams.get('sellToken');
-    const buyToken = searchParams.get('buyToken');
-    const sellAmount = searchParams.get('sellAmount');
-    const takerAddress = searchParams.get('takerAddress');
-    const slippagePercentage = searchParams.get('slippagePercentage');
+    // Use different endpoints based on chain
+    const baseUrl = ZEROX_BASE_URLS[parseInt(chainId)] || ZEROX_BASE_URLS[1];
+    const endpoint = '/swap/v1/quote'; // Use quote endpoint for all chains
 
-    if (!sellToken || !buyToken || !sellAmount || !takerAddress) {
-      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
-    }
+    // Log the request parameters
+    console.log('Requesting quote with params:', {
+      chainId,
+      sellToken,
+      buyToken,
+      sellAmount,
+      feeRecipient: FEE_RECIPIENT,
+      buyTokenPercentageFee: AFFILIATE_FEE
+    });
 
-    const apiUrl = `https://api.0x.org/swap/v1/quote`;
-
-    const response = await axios.get(apiUrl, {
+    const response = await axios.get(`${baseUrl}${endpoint}`, {
       params: {
         sellToken,
         buyToken,
         sellAmount,
-        takerAddress,
-        slippagePercentage,
-        affiliateAddress: process.env.AFFILIATE_ADDRESS,
         skipValidation: true,
+        feeRecipient: FEE_RECIPIENT,
+        buyTokenPercentageFee: AFFILIATE_FEE,
       },
       headers: {
         '0x-api-key': process.env.ZEROX_API_KEY,
       },
     });
 
+    // Log the complete response for debugging
+    console.log('0x API Response:', {
+      to: response.data.to,
+      data: response.data.data?.slice(0, 66) + '...',
+      value: response.data.value,
+      gas: response.data.gas,
+      buyAmount: response.data.buyAmount,
+      estimatedGas: response.data.estimatedGas,
+      chainId: response.data.chainId,
+    });
+
     return NextResponse.json(response.data);
   } catch (error) {
     console.error('Error fetching quote:', error.response?.data || error.message);
     return NextResponse.json(
-      { error: 'Error fetching quote', details: error.response?.data || error.message },
+      { error: error.response?.data || error.message },
       { status: error.response?.status || 500 }
     );
   }

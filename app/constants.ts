@@ -20,7 +20,10 @@ export const ZEROX_BASE_URLS: { [chainId: number]: string } = {
   42161: 'https://arbitrum.api.0x.org', // Arbitrum
   10: 'https://optimism.api.0x.org', // Optimism
   43114: 'https://avalanche.api.0x.org', // Avalanche
-  // Add more networks as needed
+  8453: 'https://base.api.0x.org', // Base
+  59144: 'https://linea.api.0x.org', // Linea
+  5000: 'https://mantle.api.0x.org', // Mantle
+  534352: 'https://scroll.api.0x.org', // Scroll
 };
 
 interface Token {
@@ -257,6 +260,28 @@ export const ERC20_ABI = [
     type: "function",
   },
   // ... you can add more functions if needed
+  {
+    constant: false,
+    inputs: [
+      { name: "_spender", type: "address" },
+      { name: "_value", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ name: "", type: "bool" }],
+    type: "function",
+    stateMutability: "nonpayable",
+  },
+  {
+    constant: true,
+    inputs: [
+      { name: "_owner", type: "address" },
+      { name: "_spender", type: "address" },
+    ],
+    name: "allowance",
+    outputs: [{ name: "remaining", type: "uint256" }],
+    type: "function",
+    stateMutability: "view",
+  },
 ];
 
 // Add Solana token interface
@@ -333,6 +358,57 @@ export const ETH_MAX_SLIPPAGE_PERCENTAGE = 50;
 export const SOLANA_MIN_SLIPPAGE_BPS = 10; // 0.1%
 export const SOLANA_MAX_SLIPPAGE_BPS = 5000; // 50%
 
+// Avalanche C-Chain Constants
+export const AVALANCHE_CHAIN_ID = 43114;
+export const AVALANCHE_RPC_URL = 'https://api.avax.network/ext/bc/C/rpc';
+export const AVALANCHE_EXPLORER_URL = 'https://snowtrace.io';
+
+// Update the ETH_ADDRESS constant to be used for all native tokens
+export const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+
+// Update AVALANCHE_TOKENS
+export const AVALANCHE_TOKENS: Token[] = [
+  {
+    chainId: AVALANCHE_CHAIN_ID,
+    name: "Avalanche",
+    symbol: "AVAX",
+    decimals: 18,
+    address: NATIVE_TOKEN_ADDRESS, // Use the native token address for AVAX
+    logoURI: "https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/logos/0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7/logo.png",
+  },
+  {
+    chainId: AVALANCHE_CHAIN_ID,
+    name: "Wrapped AVAX",
+    symbol: "WAVAX",
+    decimals: 18,
+    address: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", // WAVAX contract address
+    logoURI: "https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/logos/0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7/logo.png",
+  },
+  // Add more common Avalanche tokens like USDC.e, USDT.e, etc.
+  {
+    chainId: AVALANCHE_CHAIN_ID,
+    name: "USD Coin",
+    symbol: "USDC.e",
+    decimals: 6,
+    address: "0xA7D7079b0FEaD91F3e65f86E8915Cb59c1a4C664",
+    logoURI: "https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/logos/0xA7D7079b0FEaD91F3e65f86E8915Cb59c1a4C664/logo.png",
+  },
+  {
+    chainId: AVALANCHE_CHAIN_ID,
+    name: "Tether USD",
+    symbol: "USDT.e",
+    decimals: 6,
+    address: "0xc7198437980c041c805A1EDcbA50c1Ce5db95118",
+    logoURI: "https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/logos/0xc7198437980c041c805A1EDcbA50c1Ce5db95118/logo.png",
+  },
+];
+
+// Add Avalanche token mapping
+export const AVALANCHE_TOKENS_BY_SYMBOL: { [symbol: string]: Token } = 
+  AVALANCHE_TOKENS.reduce((acc, token) => {
+    acc[token.symbol] = token;
+    return acc;
+  }, {} as { [symbol: string]: Token });
 
 
 

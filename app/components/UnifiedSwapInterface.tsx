@@ -3,13 +3,27 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ChevronDown, ArrowUpDown, Search, X, Wallet, ArrowUp } from "lucide-react";
 import Image from "next/image";
-import { useAccount, useBalance, useChainId, useConnect, useDisconnect, useContractRead, useWaitForTransactionReceipt, useConfig, useWriteContract, useEstimateGas, useSignTypedData, useSendTransaction, usePublicClient, useWalletClient } from 'wagmi';
+import { 
+  useAccount, 
+  useBalance, 
+  useChainId, 
+  useConnect, 
+  useDisconnect, 
+  useContractRead, 
+  useWaitForTransactionReceipt, 
+  useConfig, 
+  useWriteContract, 
+  useEstimateGas, 
+  useSignTypedData, 
+  useSendTransaction, 
+  usePublicClient, 
+  useWalletClient
+} from 'wagmi';
 import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { formatUnits, parseUnits, encodeFunctionData, toHex, getContract, concat, numberToHex, size, Hex } from "viem";
-import { erc20Abi } from '@app/abis/erc20Abi';
 import { Address } from 'viem';
 import { MAINNET_TOKENS, MAX_ALLOWANCE, MAINNET_EXCHANGE_PROXY } from "../../src/constants";
 import axios from 'axios';
@@ -20,7 +34,7 @@ import { fetchTokenList, Token } from '../../lib/fetchTokenList';
 import { fetchTokenPrice } from '../utils/priceUtils';
 import { EXCHANGE_PROXY_ABI, EXCHANGE_PROXY_ADDRESSES, ERC20_ABI, MAINNET_TOKENS_BY_SYMBOL, ETH_ADDRESS, API_SWAP_PRICE_URL, FEE_RECIPIENT, AFFILIATE_FEE, ZEROX_BASE_URLS } from '@app/constants';
 import TokenSelectModal from '@/app/components/TokenSelectModal';
-import { simulateContract, waitForTransactionReceipt } from 'wagmi/actions';
+import { simulateContract, waitForTransactionReceipt, readContract } from 'wagmi/actions';
 import ChainToggle from './ChainToggle';
 import MainTrading from './ChainToggle';
 import { WalletButton } from './WalletButton';
@@ -54,7 +68,33 @@ import { PERMIT2_ADDRESS } from '@app/constants';
 import { WETH_ADDRESS } from '@app/constants';
 import { permit2Abi } from '@/src/utils/permit2abi'; // Update this import path
 import { MANUAL_WETH_TOKEN } from '@app/constants';
+import { fetchAvalanchePrice, fetchAvalancheQuote } from '../utils/avalancheUtils';
+import { AVALANCHE_CHAIN_ID, AVALANCHE_TOKENS } from '../constants';
+import { MaxUint256 } from 'ethers';
 
+// Add this ERC20 ABI constant
+const erc20Abi = [
+  {
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" }
+    ],
+    name: "approve",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" }
+    ],
+    name: "allowance",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function"
+  }
+] as const;
 
 // Add these animation variants
 const containerVariants = {
@@ -131,9 +171,10 @@ const isTransactionValid = (transaction: VersionedTransaction) => {
   return true;
 };
 
-const MAX_UINT256 = ethers.MaxUint256;
-
 const MAGIC_CALLDATA_STRING = "f".repeat(130);
+
+// Add this constant at the top
+const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
@@ -216,7 +257,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const isApprovalNeeded = useCallback(() => {
     if (!sellToken || !sellAmount) return false;
     const currentAllowance = tokenAllowances[sellToken.address] || BigInt(0);
-    const requiredAllowance = ethers.parseUnits(sellAmount, sellToken.decimals);
+    const requiredAllowance = parseUnits(sellAmount, sellToken.decimals);
     return currentAllowance < requiredAllowance;
   }, [sellToken, sellAmount, tokenAllowances]);
 
@@ -267,7 +308,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     try {
       const signer = await getSigner(); // Make sure you have a function to get the signer
       const contract = new ethers.Contract(sellToken.address, ERC20_ABI, signer);
-      const tx = await contract.approve(PERMIT2_ADDRESS, MAX_UINT256);
+      const tx = await contract.approve(PERMIT2_ADDRESS, MaxUint256);
       await tx.wait();
       await refetchAllowance();
     } catch (error) {
@@ -279,105 +320,103 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const [ethSlippage, setEthSlippage] = useState(ETH_DEFAULT_SLIPPAGE_PERCENTAGE);
 
+  // Add quote state
+  const [quote, setQuote] = useState<any>(null);
+  
+  // Update the fetchQuote function
+  const fetchQuote = async () => {
+    if (!sellToken || !buyToken || !sellAmount) {
+      return null;
+    }
+
+    try {
+      const params = {
+        chainId: chainId.toString(),
+        sellToken: sellToken.address,
+        buyToken: buyToken.address,
+        sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
+      };
+
+      const response = await axios.get('/api/swap-price', { params });
+      const quoteData = response.data;
+      setQuote(quoteData);
+      return quoteData;
+    } catch (error) {
+      console.error('Error fetching quote:', error);
+      setError('Failed to fetch swap quote.');
+      return null;
+    }
+  };
+
+  // Update handleSwap function
   const handleSwap = async () => {
-    if (!sellToken || !buyToken || !sellAmount || !address || !walletClient || !publicClient) {
-      console.error('Missing required swap parameters');
+    if (!walletClient || !publicClient || !address) {
+      console.error('No wallet client available');
       return;
     }
 
-    setSwapStatus('loading');
-    setSwapMessage('Preparing swap...');
-
     try {
-      const sellAmountInWei = parseUnits(sellAmount, sellToken.decimals);
-
-      let swapParams: any = {
-        sellToken: sellToken.address,
-        buyToken: buyToken.address,
-        sellAmount: sellAmountInWei.toString(),
-        takerAddress: address,
-        slippagePercentage: ethSlippage / 100,
-      };
-
-      console.log('Fetching quote with params:', swapParams);
-
-      const response = await axios.get('/api/swap-price', { params: swapParams });
-      const quoteData = response.data;
-
-      console.log('Received quote:', quoteData);
-
-      if (!quoteData || !quoteData.to || !quoteData.data) {
-        throw new Error('Invalid quote response: missing transaction data');
+      const latestQuote = await fetchQuote();
+      if (!latestQuote) {
+        throw new Error('No quote available');
       }
 
-      // Check if the token is ETH
-      if (sellToken.address !== ETH_ADDRESS) {
-        console.log('Checking allowance for token:', sellToken.address);
+      // Only check allowance if selling an ERC20 token (not native ETH)
+      if (sellToken?.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        const allowanceTarget = latestQuote.allowanceTarget as `0x${string}`;
+        const sellTokenAddress = sellToken?.address as `0x${string}`;
+        const amountToApprove = BigInt(latestQuote.sellAmount);
 
-        let allowance;
-        try {
-          allowance = await publicClient.readContract({
-            address: sellToken.address as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'allowance',
-            args: [address, exchangeProxyAddress],
+        const currentAllowance: bigint = await publicClient.readContract({
+          address: sellTokenAddress,
+          abi: erc20Abi,
+          functionName: 'allowance',
+          args: [address, allowanceTarget],
+        });
+
+        if (currentAllowance < amountToApprove) {
+          const { request } = await publicClient.simulateContract({
+            account: address,
+            address: sellTokenAddress,
+            abi: erc20Abi,
+            functionName: 'approve',
+            args: [allowanceTarget, MaxUint256],
           });
 
-          if (allowance < sellAmountInWei) {
-            console.log(`Setting approval for Exchange Proxy to spend ${sellToken.symbol}...`);
-
-            const { request } = await publicClient.simulateContract({
-              address: sellToken.address as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'approve',
-              args: [exchangeProxyAddress, MAX_ALLOWANCE],
-              account: address,
-            });
-
-            const hash = await walletClient.writeContract(request);
-            console.log('Approval transaction sent:', hash);
-
-            const receipt = await publicClient.waitForTransactionReceipt({ hash });
-            console.log('Approval transaction confirmed:', receipt);
-          }
-        } catch (error) {
-          console.error('Error checking or setting approval:', error);
-          throw new Error('Failed to set token approval');
+          const hash = await walletClient.writeContract(request);
+          await publicClient.waitForTransactionReceipt({ hash });
+          console.log('Token approved');
         }
-      } else {
-        console.log('Selling ETH, no approval needed');
       }
 
-      // Prepare transaction parameters
-      const txParams = {
-        account: address,
-        to: quoteData.to as `0x${string}`,
-        data: quoteData.data as `0x${string}`,
-        value: sellToken.address === ETH_ADDRESS ? sellAmountInWei : 0n,
-        gas: BigInt(quoteData.gas || '500000'),
+      // Format the transaction data properly
+      const swapTransaction = {
+        from: address,
+        to: latestQuote.to as `0x${string}`,
+        data: latestQuote.data as `0x${string}`,
+        value: latestQuote.value ? BigInt(latestQuote.value) : BigInt(0),
+        chainId: Number(chainId),
+        gas: latestQuote.gas ? BigInt(latestQuote.gas) : undefined,
       };
 
-      console.log('Transaction parameters:', txParams);
+      console.log('Swap Transaction:', {
+        ...swapTransaction,
+        value: swapTransaction.value.toString(),
+        gas: swapTransaction.gas?.toString(),
+      });
 
-      // Send the transaction
-      const hash = await walletClient.sendTransaction(txParams);
-
-      console.log('Transaction sent:', hash);
-
-      setSwapStatus('loading');
-      setSwapMessage('Transaction submitted. Waiting for confirmation...');
-
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-      console.log('Transaction confirmed:', receipt);
-
-      setSwapStatus('success');
-      setSwapMessage('Swap completed successfully!');
-
+      const { hash: swapHash } = await walletClient.sendTransaction(swapTransaction);
+      
+      console.log('Transaction submitted:', swapHash);
+      
+      const receipt = await publicClient.waitForTransactionReceipt({ 
+        hash: swapHash 
+      });
+      
+      console.log('Swap successful:', receipt);
     } catch (error) {
       console.error('Swap failed:', error);
-      setSwapStatus('error');
-      setSwapMessage(`Swap failed: ${error.message}`);
+      setError('Swap failed. See console for details.');
     }
   };
 
@@ -412,10 +451,9 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   const fetchTokens = useCallback(async () => {
-    const fetchedTokens = await fetchTokenList();
-    // Add the manual WETH token to the list
-    setTokens([MANUAL_WETH_TOKEN, ...fetchedTokens]);
-  }, []);
+    const fetchedTokens = await fetchTokenList(chainId);
+    setTokens(fetchedTokens);
+  }, [chainId]);
 
   const fetchSolanaTokens = useCallback(async () => {
     const response = await fetch('https://token.jup.ag/strict');
@@ -436,7 +474,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   useEffect(() => {
     if (activeChain === 'ethereum') {
       fetchTokens();
-    } else {
+    } else if (activeChain === 'solana') {
       fetchSolanaTokens();
     }
   }, [activeChain, fetchTokens, fetchSolanaTokens]);
@@ -525,39 +563,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [inputAmount, setInputAmount] = useState<string>('');
   const [quoteResponse, setQuoteResponse] = useState<any>(null);
 
-  const fetchQuote = async () => {
-    if (!sellToken || !buyToken || !sellAmount) return;
-
-    try {
-      const inputMint = getInputMint(sellToken.address);
-      const outputMint = getOutputMint(buyToken.address);
-      const amount = (parseFloat(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
-
-      console.log('Fetching quote with params:', { inputMint, outputMint, amount, slippageBps: DEFAULT_SLIPPAGE_BPS });
-
-      const quoteResponse = await fetchJupiterQuote({
-        inputMint,
-        outputMint,
-        amount,
-        slippageBps: DEFAULT_SLIPPAGE_BPS,
-      });
-
-      console.log('Received quote response:', quoteResponse);
-
-      if (quoteResponse.outAmount) {
-        const outAmount = parseFloat(quoteResponse.outAmount) / Math.pow(10, buyToken.decimals);
-        setBuyAmount(outAmount.toString());
-        console.log('Set buy amount:', outAmount);
-      } else {
-        console.error('Invalid quote response structure:', quoteResponse);
-        throw new Error('Invalid quote response structure');
-      }
-    } catch (error) {
-      console.error('Error fetching quote:', error);
-      // Handle the error appropriately (e.g., show an error message to the user)
-    }
-  };
-
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
 
   const updateBuyAmount = useCallback(async () => {
@@ -571,7 +576,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               chainId,
               sellToken: sellToken.address,
               buyToken: buyToken.address,
-              sellAmount: ethers.parseUnits(sellAmount, sellToken.decimals).toString(),
+              sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
               takerAddress: address,
               affiliateAddress: '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6',
               affiliateFee: '0.01', // 1% fee
@@ -1033,6 +1038,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     loadTokens();
   }, []);
 
+  useEffect(() => {
+    setSellToken(null);
+    setBuyToken(null);
+    setSellAmount('');
+    setBuyAmount('');
+  }, [activeChain]);
+
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
       <div className="w-full mb-4">
@@ -1137,6 +1149,32 @@ const getSigner = async () => {
   const provider = new ethers.BrowserProvider(window.ethereum);
   return provider.getSigner();
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

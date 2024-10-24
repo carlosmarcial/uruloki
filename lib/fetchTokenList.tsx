@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ETH_ADDRESS, WETH_ADDRESS } from '../app/constants';
+import { ETH_ADDRESS, AVALANCHE_TOKENS } from '../app/constants';
 
 export interface Token {
   address: string;
@@ -13,42 +13,78 @@ export interface Token {
 export const fetchTokenList = async (chainId: number): Promise<Token[]> => {
   try {
     console.log(`Fetching token list for chain ID: ${chainId}`);
-    const response = await axios.get(`https://tokens.coingecko.com/uniswap/all.json`);
-    const coingeckoTokens = response.data.tokens.filter((token: Token) => token.chainId === chainId);
-    console.log(`Fetched ${coingeckoTokens.length} tokens from CoinGecko`);
-
-    // Manually add ETH and WETH at the top of the list
-    const manualTokens: Token[] = [
-      {
+    
+    // Determine which manual tokens to include based on chainId
+    let manualTokens: Token[] = [];
+    
+    if (chainId === 1) { // Ethereum Mainnet
+      manualTokens = [{
         address: ETH_ADDRESS,
         chainId: chainId,
         decimals: 18,
         name: "Ethereum",
         symbol: "ETH",
         logoURI: "https://assets.coingecko.com/coins/images/279/small/ethereum.png"
-      },
-      {
-        address: WETH_ADDRESS,
-        chainId: chainId,
-        decimals: 18,
-        name: "Wrapped Ether",
-        symbol: "WETH",
-        logoURI: "https://assets.coingecko.com/coins/images/2518/small/weth.png"
+      }];
+    } else if (chainId === 43114) { // Avalanche C-Chain
+      manualTokens = AVALANCHE_TOKENS;
+    }
+    
+    let allTokens: Token[] = [...manualTokens];
+
+    // If on Avalanche, fetch Trader Joe tokens
+    if (chainId === 43114) {
+      try {
+        const traderJoeResponse = await axios.get(
+          'https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/mc.tokenlist.json'
+        );
+        const traderJoeTokens = traderJoeResponse.data.tokens.filter(
+          (token: Token) => token.chainId === 43114
+        );
+        console.log(`Fetched ${traderJoeTokens.length} tokens from Trader Joe`);
+        allTokens = [...allTokens, ...traderJoeTokens];
+      } catch (error) {
+        console.error('Error fetching Trader Joe tokens:', error);
       }
-    ];
+    }
 
-    // Combine manual tokens with fetched tokens, ensuring no duplicates
-    const combinedTokens = [
-      ...manualTokens,
-      ...coingeckoTokens.filter(token => 
-        !manualTokens.some(manualToken => manualToken.address.toLowerCase() === token.address.toLowerCase())
-      )
-    ];
+    // Fetch tokens from CoinGecko based on chainId
+    try {
+      const coingeckoResponse = await axios.get('https://tokens.coingecko.com/uniswap/all.json');
+      const coingeckoTokens = coingeckoResponse.data.tokens.filter(
+        (token: Token) => token.chainId === chainId
+      );
+      console.log(`Fetched ${coingeckoTokens.length} tokens from CoinGecko`);
 
-    console.log(`Total tokens after combining: ${combinedTokens.length}`);
-    return combinedTokens;
+      // Add CoinGecko tokens that don't already exist in our list
+      coingeckoTokens.forEach((token: Token) => {
+        const tokenExists = allTokens.some(
+          existingToken => 
+            existingToken.address.toLowerCase() === token.address.toLowerCase()
+        );
+        if (!tokenExists) {
+          allTokens.push(token);
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching CoinGecko tokens:', error);
+    }
+
+    // Remove duplicates based on address
+    const uniqueTokens = Array.from(
+      new Map(
+        allTokens.map(token => [token.address.toLowerCase(), token])
+      ).values()
+    );
+
+    console.log(`Total unique tokens: ${uniqueTokens.length}`);
+    return uniqueTokens;
   } catch (error) {
-    console.error('Error fetching token list:', error);
+    console.error('Error in fetchTokenList:', error);
+    // Return manual tokens as fallback based on chainId
+    if (chainId === 43114) {
+      return AVALANCHE_TOKENS;
+    }
     return [];
   }
 };
