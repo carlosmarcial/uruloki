@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
-import { ZEROX_BASE_URLS, FEE_RECIPIENT, AFFILIATE_FEE } from '@/app/constants';
+import { ZEROX_BASE_URLS, FEE_RECIPIENT, AFFILIATE_FEE, AVALANCHE_CHAIN_ID } from '@/app/constants';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -8,48 +8,54 @@ export async function GET(request: Request) {
   const sellToken = searchParams.get('sellToken');
   const buyToken = searchParams.get('buyToken');
   const sellAmount = searchParams.get('sellAmount');
+  const takerAddress = searchParams.get('takerAddress');
+
+  if (!chainId || !sellToken || !buyToken || !sellAmount || !takerAddress) {
+    return NextResponse.json(
+      { error: 'Missing required parameters' },
+      { status: 400 }
+    );
+  }
 
   try {
-    // Use different endpoints based on chain
     const baseUrl = ZEROX_BASE_URLS[parseInt(chainId)] || ZEROX_BASE_URLS[1];
-    const endpoint = '/swap/v1/quote'; // Use quote endpoint for all chains
+    const endpoint = '/swap/v1/quote';
 
-    // Log the request parameters
-    console.log('Requesting quote with params:', {
-      chainId,
+    const params = {
       sellToken,
       buyToken,
       sellAmount,
+      takerAddress,
+      skipValidation: false,
       feeRecipient: FEE_RECIPIENT,
-      buyTokenPercentageFee: AFFILIATE_FEE
-    });
+      buyTokenPercentageFee: AFFILIATE_FEE,
+      ...(parseInt(chainId) === AVALANCHE_CHAIN_ID && {
+        enableSlippageProtection: true,
+        slippagePercentage: '0.01',
+        intentOnFilling: true,
+      }),
+    };
 
     const response = await axios.get(`${baseUrl}${endpoint}`, {
-      params: {
-        sellToken,
-        buyToken,
-        sellAmount,
-        skipValidation: true,
-        feeRecipient: FEE_RECIPIENT,
-        buyTokenPercentageFee: AFFILIATE_FEE,
-      },
+      params,
       headers: {
         '0x-api-key': process.env.ZEROX_API_KEY,
       },
     });
 
-    // Log the complete response for debugging
-    console.log('0x API Response:', {
-      to: response.data.to,
-      data: response.data.data?.slice(0, 66) + '...',
-      value: response.data.value,
-      gas: response.data.gas,
-      buyAmount: response.data.buyAmount,
-      estimatedGas: response.data.estimatedGas,
-      chainId: response.data.chainId,
-    });
+    // Validate and format the response
+    if (!response.data) {
+      throw new Error('Invalid response from 0x API');
+    }
 
-    return NextResponse.json(response.data);
+    const formattedResponse = {
+      ...response.data,
+      value: response.data.value || '0',
+      gas: response.data.gas || '300000',
+      gasPrice: response.data.gasPrice || null,
+    };
+
+    return NextResponse.json(formattedResponse);
   } catch (error) {
     console.error('Error fetching quote:', error.response?.data || error.message);
     return NextResponse.json(
