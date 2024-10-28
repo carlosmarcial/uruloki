@@ -366,14 +366,17 @@ export const AVALANCHE_EXPLORER_URL = 'https://snowtrace.io';
 // Update the ETH_ADDRESS constant to be used for all native tokens
 export const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
-// Update AVALANCHE_TOKENS
+// Add JOE token address constant
+export const JOE_TOKEN_ADDRESS = '0x6e84a6216ea6dacc71ee8e6b0a5b7322eebc0fdd';
+
+// Update AVALANCHE_TOKENS to include JOE
 export const AVALANCHE_TOKENS: Token[] = [
   {
     chainId: AVALANCHE_CHAIN_ID,
     name: "Avalanche",
     symbol: "AVAX",
     decimals: 18,
-    address: NATIVE_TOKEN_ADDRESS, // Use the native token address for AVAX
+    address: NATIVE_TOKEN_ADDRESS,
     logoURI: "https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/logos/0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7/logo.png",
   },
   {
@@ -381,8 +384,16 @@ export const AVALANCHE_TOKENS: Token[] = [
     name: "Wrapped AVAX",
     symbol: "WAVAX",
     decimals: 18,
-    address: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", // WAVAX contract address
+    address: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
     logoURI: "https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/logos/0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7/logo.png",
+  },
+  {
+    chainId: AVALANCHE_CHAIN_ID,
+    name: "JoeTrader",
+    symbol: "JOE",
+    decimals: 18,
+    address: JOE_TOKEN_ADDRESS,
+    logoURI: "https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/logos/0x6e84a6216eA6dAcc71eE8E6b0a5B7322EEbC0fDd/logo.png",
   },
   // Add more common Avalanche tokens like USDC.e, USDT.e, etc.
   {
@@ -403,12 +414,20 @@ export const AVALANCHE_TOKENS: Token[] = [
   },
 ];
 
-// Add Avalanche token mapping
+// Update the token mappings to include the new token
 export const AVALANCHE_TOKENS_BY_SYMBOL: { [symbol: string]: Token } = 
   AVALANCHE_TOKENS.reduce((acc, token) => {
     acc[token.symbol] = token;
     return acc;
   }, {} as { [symbol: string]: Token });
+
+export const AVALANCHE_TOKENS_BY_ADDRESS: { [address: string]: Token } = 
+  AVALANCHE_TOKENS.reduce((acc, token) => {
+    acc[token.address.toLowerCase()] = token;
+    return acc;
+  }, {} as { [address: string]: Token });
+
+
 
 
 

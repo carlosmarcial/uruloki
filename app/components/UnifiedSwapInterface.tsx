@@ -69,8 +69,9 @@ import { WETH_ADDRESS } from '@app/constants';
 import { permit2Abi } from '@/src/utils/permit2abi'; // Update this import path
 import { MANUAL_WETH_TOKEN } from '@app/constants';
 import { fetchAvalanchePrice, fetchAvalancheQuote } from '../utils/avalancheUtils';
-import { AVALANCHE_CHAIN_ID, AVALANCHE_TOKENS } from '../constants';
+import { AVALANCHE_CHAIN_ID, AVALANCHE_TOKENS, JOE_TOKEN_ADDRESS, NATIVE_TOKEN_ADDRESS } from '../constants';
 import { MaxUint256 } from 'ethers';
+
 
 // Add this ERC20 ABI constant
 const erc20Abi = [
@@ -173,8 +174,6 @@ const isTransactionValid = (transaction: VersionedTransaction) => {
 
 const MAGIC_CALLDATA_STRING = "f".repeat(130);
 
-// Add this constant at the top
-const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
@@ -323,51 +322,94 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Add quote state
   const [quote, setQuote] = useState<any>(null);
   
+  // Add this function to check and handle approvals
+  const checkAndApproveToken = async (tokenAddress: string, spenderAddress: string, amount: bigint) => {
+    try {
+      console.log('Checking approval for:', {
+        tokenAddress,
+        spenderAddress,
+        amount: amount.toString()
+      });
+
+      const tokenContract = {
+        address: tokenAddress as `0x${string}`,
+        abi: erc20Abi,
+      };
+
+      // Check current allowance
+      const currentAllowance = await publicClient.readContract({
+        ...tokenContract,
+        functionName: 'allowance',
+        args: [address, spenderAddress],
+      });
+
+      console.log('Current allowance:', currentAllowance.toString());
+
+      if (currentAllowance < amount) {
+        console.log('Approval needed. Requesting approval for:', amount.toString());
+        
+        const { request } = await publicClient.simulateContract({
+          ...tokenContract,
+          functionName: 'approve',
+          args: [spenderAddress, MaxUint256], // Use max approval
+          account: address,
+        });
+
+        const hash = await walletClient.writeContract(request);
+        console.log('Approval transaction submitted:', hash);
+
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash,
+          timeout: 60_000,
+        });
+
+        console.log('Approval confirmed:', receipt);
+        return true;
+      }
+
+      console.log('Token already approved');
+      return true;
+    } catch (error) {
+      console.error('Approval error:', error);
+      throw new Error(`Failed to approve token: ${error.message}`);
+    }
+  };
+
   // Update the fetchQuote function
   const fetchQuote = async () => {
-    if (!sellToken || !buyToken || !sellAmount) {
+    if (!sellToken || !buyToken || !sellAmount || !address) {
       return null;
     }
 
     try {
-      const params = {
-        chainId: chainId.toString(),
+      console.log('Fetching quote with params:', {
         sellToken: sellToken.address,
         buyToken: buyToken.address,
         sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
         takerAddress: address,
-        // Add these parameters for better quotes
-        skipValidation: false,
-        slippagePercentage: '0.01', // 1% slippage
-        enableSlippageProtection: true,
-        intentOnFilling: true,
-      };
+      });
 
-      const response = await axios.get('/api/swap-price', { params });
-      
-      // Validate the response data
-      if (!response.data || !response.data.data) {
-        throw new Error('Invalid quote response');
-      }
+      const response = await axios.get('/api/swap-price', {
+        params: {
+          chainId: chainId.toString(),
+          sellToken: sellToken.address,
+          buyToken: buyToken.address,
+          sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
+          takerAddress: address,
+          affiliateAddress: FEE_RECIPIENT,
+          affiliateFee: AFFILIATE_FEE,
+        },
+      });
 
-      // Format the quote data
-      const formattedQuote = {
-        ...response.data,
-        value: response.data.value || '0',
-        gas: response.data.gas || '300000',
-        gasPrice: response.data.gasPrice || await publicClient.getGasPrice().toString(),
-      };
-
-      setQuote(formattedQuote);
-      return formattedQuote;
+      console.log('Quote response:', response.data);
+      return response.data;
     } catch (error) {
       console.error('Error fetching quote:', error);
-      setError('Failed to fetch swap quote');
-      return null;
+      throw new Error(error.response?.data?.error?.message || 'Failed to fetch quote');
     }
   };
 
-  // Update handleSwap function
+  // Update the handleSwap function
   const handleSwap = async () => {
     if (!walletClient || !publicClient || !address) {
       console.error('No wallet client available');
@@ -375,89 +417,55 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
 
     try {
-      const latestQuote = await fetchQuote();
-      if (!latestQuote) {
-        throw new Error('No quote available');
+      setSwapStatus('loading');
+      console.log('Starting swap execution...');
+
+      // Get the latest quote
+      const quoteResponse = await fetchQuote();
+      if (!quoteResponse) {
+        throw new Error('Failed to fetch quote');
       }
 
-      // Add specific handling for Avalanche chain
-      if (chainId === AVALANCHE_CHAIN_ID) {
-        // First, prepare the transaction parameters
-        const txParams = {
-          account: address as `0x${string}`,
-          to: latestQuote.to as `0x${string}`,
-          data: latestQuote.data as `0x${string}`,
-          value: BigInt(latestQuote.value || '0'),
-          chain: {
-            id: AVALANCHE_CHAIN_ID,
-          },
-        };
+      console.log('Quote received:', quoteResponse);
 
-        // Estimate gas first
-        let estimatedGas;
-        try {
-          estimatedGas = await publicClient.estimateGas(txParams);
-          console.log('Estimated gas:', estimatedGas.toString());
-        } catch (error) {
-          console.warn('Gas estimation failed:', error);
-          estimatedGas = BigInt(300000); // fallback gas limit
-        }
+      // Prepare the transaction
+      const txRequest = {
+        account: address,
+        to: quoteResponse.to as `0x${string}`,
+        data: quoteResponse.data as `0x${string}`,
+        value: BigInt(quoteResponse.value || '0'),
+        chainId: chainId,
+      };
 
-        // Get current gas price
-        const gasPrice = await publicClient.getGasPrice();
-        console.log('Current gas price:', gasPrice.toString());
+      console.log('Preparing transaction:', txRequest);
 
-        // Prepare the final transaction
-        const swapTransaction = {
-          ...txParams,
-          gas: estimatedGas,
-          gasPrice: gasPrice,
-        };
+      // Estimate gas
+      const gasEstimate = await publicClient.estimateGas(txRequest);
+      console.log('Gas estimate:', gasEstimate);
 
-        // Log the transaction for debugging
-        console.log('Avalanche Swap Transaction:', {
-          ...swapTransaction,
-          value: swapTransaction.value.toString(),
-          gas: swapTransaction.gas.toString(),
-          gasPrice: swapTransaction.gasPrice.toString(),
-        });
+      // Send the transaction
+      const hash = await walletClient.sendTransaction({
+        ...txRequest,
+        gas: gasEstimate + BigInt(50000), // Add buffer
+      });
 
-        // Send the transaction with proper error handling
-        try {
-          const hash = await walletClient.sendTransaction(swapTransaction);
-          
-          if (!hash) {
-            throw new Error('Transaction hash is undefined');
-          }
+      console.log('Transaction submitted:', hash);
 
-          console.log('Transaction submitted:', hash);
+      // Wait for confirmation
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash,
+        timeout: 60_000,
+        confirmations: 2,
+      });
 
-          // Wait for transaction receipt
-          const receipt = await publicClient.waitForTransactionReceipt({
-            hash,
-            timeout: 60_000,
-            confirmations: 2,
-          });
+      console.log('Transaction confirmed:', receipt);
+      setSwapStatus('success');
+      setSwapMessage(`Swap successful! Transaction hash: ${hash}`);
 
-          console.log('Transaction receipt:', receipt);
-
-          if (receipt.status === 'success') {
-            // Handle success
-            setError(null);
-            // You might want to add success handling here
-          } else {
-            throw new Error('Transaction failed');
-          }
-        } catch (txError) {
-          console.error('Transaction error:', txError);
-          throw new Error(`Transaction failed: ${txError.message}`);
-        }
-      } else {
-        // Handle other chains...
-      }
     } catch (error) {
       console.error('Swap failed:', error);
-      setError(error instanceof Error ? error.message : 'Swap failed. Please try again.');
+      setSwapStatus('error');
+      setSwapMessage(error instanceof Error ? error.message : 'Swap failed. Please try again.');
     }
   };
 
@@ -1202,6 +1210,8 @@ const getSigner = async () => {
   const provider = new ethers.BrowserProvider(window.ethereum);
   return provider.getSigner();
 };
+
+
 
 
 

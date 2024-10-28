@@ -19,47 +19,34 @@ export async function GET(request: Request) {
 
   try {
     const baseUrl = ZEROX_BASE_URLS[parseInt(chainId)] || ZEROX_BASE_URLS[1];
-    const endpoint = '/swap/v1/quote';
+    console.log('Using 0x API URL:', baseUrl);
 
-    const params = {
-      sellToken,
-      buyToken,
-      sellAmount,
-      takerAddress,
-      skipValidation: false,
-      feeRecipient: FEE_RECIPIENT,
-      buyTokenPercentageFee: AFFILIATE_FEE,
-      ...(parseInt(chainId) === AVALANCHE_CHAIN_ID && {
-        enableSlippageProtection: true,
+    const response = await axios.get(`${baseUrl}/swap/v1/quote`, {
+      params: {
+        sellToken,
+        buyToken,
+        sellAmount,
+        takerAddress,
+        affiliateAddress: FEE_RECIPIENT,
+        affiliateFee: AFFILIATE_FEE,
+        skipValidation: false, // Changed to false
         slippagePercentage: '0.01',
-        intentOnFilling: true,
-      }),
-    };
-
-    const response = await axios.get(`${baseUrl}${endpoint}`, {
-      params,
+      },
       headers: {
         '0x-api-key': process.env.ZEROX_API_KEY,
       },
     });
 
-    // Validate and format the response
-    if (!response.data) {
-      throw new Error('Invalid response from 0x API');
-    }
+    console.log('0x API Response:', response.data);
 
-    const formattedResponse = {
-      ...response.data,
-      value: response.data.value || '0',
-      gas: response.data.gas || '300000',
-      gasPrice: response.data.gasPrice || null,
-    };
-
-    return NextResponse.json(formattedResponse);
+    return NextResponse.json(response.data);
   } catch (error) {
-    console.error('Error fetching quote:', error.response?.data || error.message);
+    console.error('0x API Error:', error.response?.data || error);
     return NextResponse.json(
-      { error: error.response?.data || error.message },
+      { 
+        error: error.response?.data?.values?.message || error.message,
+        details: error.response?.data 
+      },
       { status: error.response?.status || 500 }
     );
   }
