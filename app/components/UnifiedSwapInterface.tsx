@@ -17,7 +17,7 @@ import {
   useSignTypedData, 
   useSendTransaction, 
   usePublicClient, 
-  useWalletClient
+  useWalletClient,
 } from 'wagmi';
 import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -71,6 +71,13 @@ import { MANUAL_WETH_TOKEN } from '@app/constants';
 import { fetchAvalanchePrice, fetchAvalancheQuote } from '../utils/avalancheUtils';
 import { AVALANCHE_CHAIN_ID, AVALANCHE_TOKENS, JOE_TOKEN_ADDRESS, NATIVE_TOKEN_ADDRESS } from '../constants';
 import { MaxUint256 } from 'ethers';
+import { fetchArbitrumTokens } from '../utils/arbitrumUtils';
+import { fetchPolygonTokens } from '../utils/polygonUtils';
+import { fetchOptimismTokens } from '../utils/optimismUtils';
+import { ARBITRUM_CHAIN_ID, POLYGON_CHAIN_ID, OPTIMISM_CHAIN_ID, ETHEREUM_CHAIN_ID } from '@app/constants';
+import { fetchAvalancheTokens } from '../utils/avalancheUtils';
+
+
 
 
 // Add this ERC20 ABI constant
@@ -171,8 +178,6 @@ const isTransactionValid = (transaction: VersionedTransaction) => {
   }
   return true;
 };
-
-const MAGIC_CALLDATA_STRING = "f".repeat(130);
 
 
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
@@ -302,16 +307,56 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   }, [isApproveSuccess, refetchAllowance]);
 
   const handleApprove = async () => {
-    if (!sellToken) return;
-    
+    if (!walletClient || !allowanceTarget || !sellToken || !address) {
+      console.error('Missing required parameters for approval');
+      return;
+    }
+
     try {
-      const signer = await getSigner(); // Make sure you have a function to get the signer
-      const contract = new ethers.Contract(sellToken.address, ERC20_ABI, signer);
-      const tx = await contract.approve(PERMIT2_ADDRESS, MaxUint256);
-      await tx.wait();
-      await refetchAllowance();
+      console.log('Approving token:', sellToken.address, 'for spender:', allowanceTarget);
+      
+      const tokenContract = {
+        address: sellToken.address as `0x${string}`,
+        abi: ERC20_ABI,
+      };
+
+      // First check current allowance
+      const currentAllowance = await publicClient.readContract({
+        ...tokenContract,
+        functionName: 'allowance',
+        args: [address, allowanceTarget as `0x${string}`],
+      });
+
+      if (currentAllowance > 0n) {
+        console.log('Token already has allowance:', currentAllowance.toString());
+        setNeedsAllowance(false);
+        return;
+      }
+
+      // Send approval transaction
+      const hash = await walletClient.writeContract({
+        ...tokenContract,
+        functionName: 'approve',
+        args: [allowanceTarget as `0x${string}`, MAX_UINT256],
+      });
+
+      console.log('Approval transaction submitted:', hash);
+
+      // Wait for transaction confirmation
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash,
+        timeout: 60_000,
+      });
+
+      console.log('Approval confirmed:', receipt);
+      setNeedsAllowance(false);
+      
+      // Refetch quote after approval
+      await fetchQuote();
+
     } catch (error) {
       console.error('Error approving token:', error);
+      throw new Error('Failed to approve token: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -376,96 +421,212 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   // Update the fetchQuote function
-  const fetchQuote = async () => {
-    if (!sellToken || !buyToken || !sellAmount || !address) {
-      return null;
-    }
-
+  const fetchQuote = async (params: QuoteParams) => {
     try {
-      console.log('Fetching quote with params:', {
-        sellToken: sellToken.address,
-        buyToken: buyToken.address,
-        sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
-        takerAddress: address,
-      });
-
-      const response = await axios.get('/api/swap-price', {
+      console.log('Fetching quote with params:', params);
+      
+      // No need to modify the addresses here since the API route will handle it
+      const response = await axios.get(API_SWAP_PRICE_URL, {
         params: {
-          chainId: chainId.toString(),
-          sellToken: sellToken.address,
-          buyToken: buyToken.address,
-          sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
-          takerAddress: address,
-          affiliateAddress: FEE_RECIPIENT,
-          affiliateFee: AFFILIATE_FEE,
-        },
+          chainId: params.chainId,
+          sellToken: params.sellToken,
+          buyToken: params.buyToken,
+          sellAmount: params.sellAmount,
+          takerAddress: params.takerAddress,
+          affiliateAddress: params.affiliateAddress,
+          affiliateFee: params.affiliateFee,
+        }
       });
 
-      console.log('Quote response:', response.data);
+      if (response.data.error) {
+        throw new Error(response.data.error);
+      }
+
       return response.data;
     } catch (error) {
       console.error('Error fetching quote:', error);
-      throw new Error(error.response?.data?.error?.message || 'Failed to fetch quote');
+      throw error;
     }
   };
 
-  // Update the handleSwap function
+  // Add this function to check and set allowance
+  const checkAndSetAllowance = async (
+    sellToken: Token,
+    sellAmount: bigint,
+    address: `0x${string}`,
+    walletClient: WalletClient,
+    publicClient: PublicClient
+  ) => {
+    try {
+      console.log('Checking allowance...', {
+        sellToken,
+        sellAmount: sellAmount.toString(),
+        address,
+        permit2Address: PERMIT2_ADDRESS
+      });
+
+      // Skip allowance check for native token (ETH/AVAX/etc)
+      if (sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+        console.log('Native token detected, skipping allowance check');
+        return true;
+      }
+
+      // Check current allowance using readContract
+      const currentAllowance = await publicClient.readContract({
+        address: sellToken.address as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [address, PERMIT2_ADDRESS as `0x${string}`]
+      }) as bigint;
+
+      console.log('Current allowance:', currentAllowance.toString());
+      console.log('Required amount:', sellAmount.toString());
+
+      // If allowance is insufficient, request approval
+      if (currentAllowance < sellAmount) {
+        console.log('Insufficient allowance, requesting approval...');
+
+        try {
+          // Simulate the approval transaction
+          const { request } = await publicClient.simulateContract({
+            address: sellToken.address as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
+            account: address
+          });
+
+          console.log('Approval simulation successful, sending transaction...');
+
+          // Send the approval transaction
+          const hash = await walletClient.writeContract(request);
+          console.log('Approval transaction hash:', hash);
+
+          // Wait for transaction confirmation
+          const receipt = await publicClient.waitForTransactionReceipt({ 
+            hash,
+            timeout: 60_000,
+            confirmations: 1
+          });
+
+          if (receipt.status === 'reverted') {
+            throw new Error('Approval transaction reverted');
+          }
+
+          console.log('Approval confirmed:', receipt);
+          return true;
+        } catch (error) {
+          console.error('Error in approval transaction:', error);
+          throw new Error(`Approval failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+
+      console.log('Sufficient allowance already exists');
+      return true;
+    } catch (error) {
+      console.error('Error in allowance check/approval:', error);
+      throw new Error(`Failed to approve token: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Update handleSwap to handle L2-specific requirements
   const handleSwap = async () => {
-    if (!walletClient || !publicClient || !address) {
-      console.error('No wallet client available');
+    if (!walletClient || !publicClient || !address || !chainId) {
+      setSwapError('Please connect your wallet');
       return;
     }
 
     try {
       setSwapStatus('loading');
-      console.log('Starting swap execution...');
+      setSwapError(null);
 
-      // Get the latest quote
-      const quoteResponse = await fetchQuote();
-      if (!quoteResponse) {
-        throw new Error('Failed to fetch quote');
+      // Parse the sell amount with proper decimals
+      const parsedSellAmount = parseUnits(sellAmount, sellToken.decimals);
+
+      // 1. Check allowance
+      await checkAndSetAllowance(
+        sellToken,
+        parsedSellAmount,
+        address as `0x${string}`,
+        walletClient,
+        publicClient
+      );
+
+      // 2. Get the quote
+      const quoteResponse = await fetchQuote({
+        sellToken: sellToken.address === '0x0000000000000000000000000000000000001010' 
+          ? NATIVE_TOKEN_ADDRESS 
+          : sellToken.address,
+        buyToken: buyToken.address === '0x0000000000000000000000000000000000001010'
+          ? NATIVE_TOKEN_ADDRESS
+          : buyToken.address,
+        sellAmount: parsedSellAmount.toString(),
+        takerAddress: address,
+        chainId: chainId,
+        slippagePercentage: '0.01' // 1% slippage
+      });
+
+      if (!quoteResponse?.permit2?.eip712) {
+        throw new Error('Invalid quote response');
       }
 
       console.log('Quote received:', quoteResponse);
 
-      // Prepare the transaction
-      const txRequest = {
-        account: address,
-        to: quoteResponse.to as `0x${string}`,
-        data: quoteResponse.data as `0x${string}`,
-        value: BigInt(quoteResponse.value || '0'),
-        chainId: chainId,
-      };
-
-      console.log('Preparing transaction:', txRequest);
-
-      // Estimate gas
-      const gasEstimate = await publicClient.estimateGas(txRequest);
-      console.log('Gas estimate:', gasEstimate);
-
-      // Send the transaction
-      const hash = await walletClient.sendTransaction({
-        ...txRequest,
-        gas: gasEstimate + BigInt(50000), // Add buffer
+      // 3. Sign the permit2 message
+      console.log('Signing Permit2 message...');
+      const signature = await walletClient.signTypedData({
+        account: address as `0x${string}`,
+        domain: quoteResponse.permit2.eip712.domain,
+        types: quoteResponse.permit2.eip712.types,
+        primaryType: quoteResponse.permit2.eip712.primaryType,
+        message: quoteResponse.permit2.eip712.message
       });
 
-      console.log('Transaction submitted:', hash);
+      // 4. Prepare transaction data with signature
+      const signatureLengthInHex = numberToHex(size(signature), {
+        size: 32,
+        signed: false,
+      });
 
-      // Wait for confirmation
+      // 5. Combine transaction data with signature
+      const finalTxData = concat([
+        quoteResponse.transaction.data as `0x${string}`,
+        signatureLengthInHex,
+        signature
+      ]);
+
+      // 6. Send the transaction
+      console.log('Sending swap transaction...');
+      const hash = await walletClient.sendTransaction({
+        account: address as `0x${string}`,
+        to: quoteResponse.transaction.to as `0x${string}`,
+        data: finalTxData,
+        value: BigInt(quoteResponse.transaction.value || '0'),
+        gas: BigInt(quoteResponse.transaction.gas || '0'),
+        chainId: chainId
+      });
+
+      console.log('Swap transaction submitted:', hash);
+
+      // 7. Wait for confirmation
       const receipt = await publicClient.waitForTransactionReceipt({
         hash,
         timeout: 60_000,
-        confirmations: 2,
+        confirmations: 1
       });
 
-      console.log('Transaction confirmed:', receipt);
-      setSwapStatus('success');
-      setSwapMessage(`Swap successful! Transaction hash: ${hash}`);
+      console.log('Swap transaction confirmed:', receipt);
+
+      if (receipt.status === 'success') {
+        setSwapStatus('success');
+      } else {
+        throw new Error('Swap transaction failed');
+      }
 
     } catch (error) {
       console.error('Swap failed:', error);
       setSwapStatus('error');
-      setSwapMessage(error instanceof Error ? error.message : 'Swap failed. Please try again.');
+      setSwapError(error instanceof Error ? error.message : 'Unknown error occurred');
     }
   };
 
@@ -511,10 +672,59 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setBuyAmount(sellAmount);
   };
 
-  const fetchTokens = useCallback(async () => {
-    const fetchedTokens = await fetchTokenList(chainId);
-    setTokens(fetchedTokens);
+  const [availableTokens, setAvailableTokens] = useState<Token[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<Token | null>(null);
+
+  const fetchTokensForChain = useCallback(async () => {
+    if (!chainId) return;
+
+    try {
+      console.log('Fetching tokens for chain ID:', chainId);
+      let tokens: Token[] = [];
+
+      switch (chainId) {
+        case ARBITRUM_CHAIN_ID:
+          tokens = await fetchArbitrumTokens();
+          console.log('Fetched Arbitrum tokens:', tokens.length);
+          break;
+        case POLYGON_CHAIN_ID:
+          tokens = await fetchPolygonTokens();
+          console.log('Fetched Polygon tokens:', tokens.length);
+          break;
+        case OPTIMISM_CHAIN_ID:
+          tokens = await fetchOptimismTokens();
+          console.log('Fetched Optimism tokens:', tokens.length);
+          break;
+        case AVALANCHE_CHAIN_ID:
+          tokens = await fetchAvalancheTokens();
+          console.log('Fetched Avalanche tokens:', tokens.length);
+          break;
+        default:
+          console.log('Using default Ethereum tokens');
+          tokens = await fetchTokenList(chainId);
+      }
+
+      if (tokens && Array.isArray(tokens)) {
+        // Ensure tokens have required properties and are unique
+        const validTokens = tokens
+          .filter(token => token.address && token.symbol && token.name)
+          .filter((token, index, self) => 
+            index === self.findIndex(t => t.address.toLowerCase() === token.address.toLowerCase())
+          );
+
+        console.log(`Setting ${validTokens.length} valid tokens for chain ${chainId}`);
+        setAvailableTokens(validTokens);
+      }
+    } catch (error) {
+      console.error(`Error fetching tokens for chain ${chainId}:`, error);
+      setAvailableTokens([]);
+    }
   }, [chainId]);
+
+  useEffect(() => {
+    fetchTokensForChain();
+  }, [fetchTokensForChain, chainId]);
 
   const fetchSolanaTokens = useCallback(async () => {
     const response = await fetch('https://token.jup.ag/strict');
@@ -534,11 +744,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   useEffect(() => {
     if (activeChain === 'ethereum') {
-      fetchTokens();
+      fetchTokensForChain();
     } else if (activeChain === 'solana') {
       fetchSolanaTokens();
     }
-  }, [activeChain, fetchTokens, fetchSolanaTokens]);
+  }, [activeChain, chainId, fetchTokensForChain, fetchSolanaTokens]);
 
   const openTokenSelectModal = (type: 'sell' | 'buy') => {
     setSelectingTokenFor(type);
@@ -551,12 +761,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   const handleTokenSelect = (token: Token | SolanaToken) => {
+    console.log('Token selected:', token);
+    
     if (selectingTokenFor === 'sell') {
       setSellToken(token);
     } else if (selectingTokenFor === 'buy') {
       setBuyToken(token);
     }
-    closeTokenSelectModal();
+    
+    setIsTokenSelectModalOpen(false);
+    setSelectingTokenFor(null);
   };
 
   const renderTokenSelector = (token: Token | SolanaToken | null, onClick: () => void) => (
@@ -631,16 +845,24 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       setIsLoadingPrice(true);
       try {
         if (activeChain === 'ethereum') {
-          // Ethereum price fetching logic
+          // Get proper addresses for native tokens
+          const sellTokenAddress = sellToken.address === '0x0000000000000000000000000000000000001010' 
+            ? NATIVE_TOKEN_ADDRESS 
+            : sellToken.address;
+          
+          const buyTokenAddress = buyToken.address === '0x0000000000000000000000000000000000001010'
+            ? NATIVE_TOKEN_ADDRESS
+            : buyToken.address;
+
           const response = await axios.get(API_SWAP_PRICE_URL, {
             params: {
               chainId,
-              sellToken: sellToken.address,
-              buyToken: buyToken.address,
+              sellToken: sellTokenAddress,
+              buyToken: buyTokenAddress,
               sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
               takerAddress: address,
-              affiliateAddress: '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6',
-              affiliateFee: '0.01', // 1% fee
+              affiliateAddress: FEE_RECIPIENT,
+              affiliateFee: AFFILIATE_FEE,
             }
           });
           setBuyAmount(formatUnits(response.data.buyAmount, buyToken.decimals));
@@ -1106,6 +1328,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setBuyAmount('');
   }, [activeChain]);
 
+  // Add this state for tracking allowance status
+  const [needsAllowance, setNeedsAllowance] = useState(false);
+  const [allowanceTarget, setAllowanceTarget] = useState<string | null>(null);
+
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
       <div className="w-full mb-4">
@@ -1129,9 +1355,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         </div>
         {isTokenSelectModalOpen && (
           <TokenSelectModal
-            tokens={activeChain === 'ethereum' ? tokens : solanaTokens}
+            tokens={availableTokens}
             onClose={closeTokenSelectModal}
             onSelect={handleTokenSelect}
+            chainId={chainId} // Pass chainId to modal
           />
         )}
       </div>

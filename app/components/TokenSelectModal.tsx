@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Search } from 'lucide-react';
+import { X } from 'lucide-react';
 import TokenImage from './TokenImage';
 
 interface Token {
@@ -21,48 +21,75 @@ interface SolanaToken {
 }
 
 interface TokenSelectModalProps {
-  tokens: (Token | SolanaToken)[];
+  tokens: Token[];
   onClose: () => void;
-  onSelect: (token: Token | SolanaToken) => void;
+  onSelect: (token: Token) => void;
+  chainId: number;
 }
 
-const TokenSelectModal: React.FC<TokenSelectModalProps> = ({ tokens, onClose, onSelect }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filteredTokens, setFilteredTokens] = useState<(Token | SolanaToken)[]>([]);
-  const [visibleTokens, setVisibleTokens] = useState<(Token | SolanaToken)[]>([]);
+const TokenSelectModal: React.FC<TokenSelectModalProps> = ({ tokens, onClose, onSelect, chainId }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [displayedTokens, setDisplayedTokens] = useState<Token[]>([]);
+  const [filteredTokens, setFilteredTokens] = useState<Token[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const INITIAL_LOAD = 15;
-  const LOAD_MORE_COUNT = 10;
+  
+  const ITEMS_PER_PAGE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const filterTokens = useCallback(() => {
-    return tokens.filter(token => 
-      token.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      token.symbol.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [tokens, searchTerm]);
-
-  useEffect(() => {
-    const filtered = filterTokens();
-    setFilteredTokens(filtered);
-    setVisibleTokens(filtered.slice(0, INITIAL_LOAD));
-  }, [filterTokens]);
-
-  const loadMoreTokens = useCallback(() => {
-    setVisibleTokens(prevTokens => {
-      const currentLength = prevTokens.length;
-      const nextTokens = filteredTokens.slice(currentLength, currentLength + LOAD_MORE_COUNT);
-      return [...prevTokens, ...nextTokens];
-    });
-  }, [filteredTokens]);
-
-  const handleScroll = useCallback(() => {
-    if (containerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-      if (scrollHeight - scrollTop <= clientHeight * 1.5) {
-        loadMoreTokens();
-      }
+  // Filter tokens based on search query
+  const filterTokens = useCallback((query: string, tokenList: Token[]) => {
+    if (!query.trim()) {
+      return tokenList;
     }
-  }, [loadMoreTokens]);
+
+    const searchLower = query.toLowerCase();
+    return tokenList.filter(token => 
+      token.symbol?.toLowerCase().includes(searchLower) ||
+      token.name?.toLowerCase().includes(searchLower) ||
+      token.address?.toLowerCase() === searchLower
+    );
+  }, []);
+
+  // Initialize with first batch of tokens
+  useEffect(() => {
+    const initialTokens = tokens.slice(0, ITEMS_PER_PAGE);
+    setDisplayedTokens(initialTokens);
+    setFilteredTokens(tokens);
+    setCurrentPage(1);
+  }, [tokens, chainId]);
+
+  // Handle search
+  useEffect(() => {
+    setIsLoading(true);
+    const filtered = filterTokens(searchQuery, tokens);
+    setFilteredTokens(filtered);
+    setDisplayedTokens(filtered.slice(0, ITEMS_PER_PAGE));
+    setCurrentPage(1);
+    setIsLoading(false);
+  }, [searchQuery, tokens, filterTokens]);
+
+  // Infinite scroll handler
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current || isLoading) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    if (scrollTop + clientHeight >= scrollHeight - 100) {
+      const nextPage = currentPage + 1;
+      const start = (nextPage - 1) * ITEMS_PER_PAGE;
+      const end = start + ITEMS_PER_PAGE;
+      
+      setIsLoading(true);
+      setTimeout(() => {
+        setDisplayedTokens(prev => [
+          ...prev,
+          ...filteredTokens.slice(start, end)
+        ]);
+        setCurrentPage(nextPage);
+        setIsLoading(false);
+      }, 100);
+    }
+  }, [currentPage, filteredTokens, isLoading]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -72,49 +99,59 @@ const TokenSelectModal: React.FC<TokenSelectModalProps> = ({ tokens, onClose, on
     }
   }, [handleScroll]);
 
-  const handleClickOutside = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleClickOutside}>
-      <div className="bg-gray-800 rounded-lg p-4 w-96 max-h-[80vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80">
+      <div className="bg-[#1a1b1f] rounded-2xl p-4 max-w-md w-full max-h-[80vh] overflow-hidden border border-gray-800">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-white">Select a token</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X size={24} />
+          <h2 className="text-xl font-bold text-white">Select Token</h2>
+          <button 
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            ×
           </button>
         </div>
-        <div className="mb-4 relative">
-          <input
-            type="text"
-            placeholder="Search tokens"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-gray-700 text-white rounded-md py-2 pl-10 pr-4"
-          />
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-        </div>
-        <div ref={containerRef} className="space-y-2 overflow-y-auto max-h-[60vh]">
-          {visibleTokens.map((token) => (
+
+        <input
+          type="text"
+          placeholder="Search by name or paste address"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full p-3 bg-[#2c2d33] border border-gray-700 rounded-xl mb-4 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+        />
+
+        <div 
+          ref={containerRef}
+          className="overflow-y-auto max-h-[60vh] custom-scrollbar"
+        >
+          {displayedTokens.map((token) => (
             <div
-              key={token.address}
-              className="flex items-center space-x-2 p-2 hover:bg-gray-700 rounded cursor-pointer"
+              key={`${token.address}-${chainId}`}
               onClick={() => onSelect(token)}
+              className="flex items-center p-3 hover:bg-[#2c2d33] cursor-pointer rounded-xl transition-colors"
             >
-              <TokenImage
-                src={token.logoURI}
-                alt={token.name}
-                width={24}
-                height={24}
-                className="rounded-full"
-              />
-              <span className="text-white">{token.symbol}</span>
-              <span className="text-gray-400 text-sm">{token.name}</span>
+              {token.logoURI && (
+                <img 
+                  src={token.logoURI} 
+                  alt={token.symbol} 
+                  className="w-8 h-8 mr-3 rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              )}
+              <div>
+                <div className="font-medium text-white">{token.symbol}</div>
+                <div className="text-sm text-gray-400">{token.name}</div>
+              </div>
             </div>
           ))}
+          
+          {isLoading && (
+            <div className="text-center py-4 text-gray-400">
+              Loading more tokens...
+            </div>
+          )}
         </div>
       </div>
     </div>
