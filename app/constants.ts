@@ -39,7 +39,22 @@ export const API_SWAP_PRICE_URL = '/api/swap-price';
 export const TOKEN_LIST_URL = 'https://tokens.coingecko.com/uniswap/all.json';
 
 // 0x API Base URLs
-export const ZEROX_API_URL = 'https://api.0x.org';
+export const ZEROX_API_URLS: { [chainId: number]: string } = {
+  [ETHEREUM_CHAIN_ID]: 'https://api.0x.org',
+  [POLYGON_CHAIN_ID]: 'https://polygon.api.0x.org',
+  [OPTIMISM_CHAIN_ID]: 'https://optimism.api.0x.org',
+  [ARBITRUM_CHAIN_ID]: 'https://arbitrum.api.0x.org',
+  [AVALANCHE_CHAIN_ID]: 'https://avalanche.api.0x.org',
+};
+
+// Add API versions for different chains
+export const ZEROX_API_VERSIONS: { [chainId: number]: string } = {
+  [ETHEREUM_CHAIN_ID]: 'v2',
+  [POLYGON_CHAIN_ID]: 'v2',
+  [OPTIMISM_CHAIN_ID]: 'v2',
+  [ARBITRUM_CHAIN_ID]: 'v2',
+  [AVALANCHE_CHAIN_ID]: 'v1', // Avalanche still uses v1
+};
 
 // Exchange Proxy Addresses
 export const EXCHANGE_PROXY_ADDRESSES: { [chainId: number]: string } = {

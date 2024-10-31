@@ -37,14 +37,25 @@ export const fetchAvalanchePrice = async (
   taker: string,
   slippageBps: string
 ) => {
-  return fetchPrice(
-    AVALANCHE_CHAIN_ID,
-    sellToken,
-    buyToken,
-    sellAmount,
-    taker,
-    slippageBps
-  );
+  try {
+    const response = await fetchPrice(
+      AVALANCHE_CHAIN_ID,
+      sellToken,
+      buyToken,
+      sellAmount,
+      taker,
+      slippageBps
+    );
+    
+    if (!response || !response.price) {
+      throw new Error('Invalid price response from Avalanche API');
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Error fetching Avalanche price:', error);
+    throw error;
+  }
 };
 
 export const fetchAvalancheQuote = async (
@@ -54,12 +65,23 @@ export const fetchAvalancheQuote = async (
   taker: string,
   slippageBps: string
 ) => {
-  return fetchQuote(
-    AVALANCHE_CHAIN_ID,
-    sellToken,
-    buyToken,
-    sellAmount,
-    taker,
-    slippageBps
-  );
+  try {
+    const response = await fetchQuote(
+      AVALANCHE_CHAIN_ID,
+      sellToken,
+      buyToken,
+      sellAmount,
+      taker,
+      slippageBps
+    );
+    
+    if (!response || !response.price) {
+      throw new Error('Invalid quote response from Avalanche API');
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Error fetching Avalanche quote:', error);
+    throw error;
+  }
 };

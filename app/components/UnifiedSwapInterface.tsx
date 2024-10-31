@@ -196,7 +196,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [sellToken, setSellToken] = useState<Token | SolanaToken | null>(null);
   const [buyToken, setBuyToken] = useState<Token | SolanaToken | null>(null);
   const [sellAmount, setSellAmount] = useState<string>('');
-  const [buyAmount, setBuyAmount] = useState<string>('');
+  const [buyAmount, setBuyAmount] = useState<string>('0');
   const [isTokenSelectModalOpen, setIsTokenSelectModalOpen] = useState(false);
   const [selectingTokenFor, setSelectingTokenFor] = useState<'sell' | 'buy' | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -421,30 +421,51 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   // Update the fetchQuote function
-  const fetchQuote = async (params: QuoteParams) => {
+  const fetchQuote = async (
+    chainId: number,
+    sellToken: string,
+    buyToken: string,
+    sellAmount: string,
+    takerAddress: string,
+  ) => {
     try {
-      console.log('Fetching quote with params:', params);
-      
-      // No need to modify the addresses here since the API route will handle it
-      const response = await axios.get(API_SWAP_PRICE_URL, {
+      console.log('Fetching quote with params:', {
+        chainId,
+        sellToken,
+        buyToken,
+        sellAmount,
+        takerAddress
+      });
+
+      const response = await axios.get('/api/swap-price', {
         params: {
-          chainId: params.chainId,
-          sellToken: params.sellToken,
-          buyToken: params.buyToken,
-          sellAmount: params.sellAmount,
-          takerAddress: params.takerAddress,
-          affiliateAddress: params.affiliateAddress,
-          affiliateFee: params.affiliateFee,
+          chainId,
+          sellToken,
+          buyToken,
+          sellAmount,
+          takerAddress,
+          affiliateAddress: FEE_RECIPIENT,
+          affiliateFee: AFFILIATE_FEE
         }
       });
 
-      if (response.data.error) {
-        throw new Error(response.data.error);
+      console.log('Quote response:', response.data);
+
+      if (!response.data) {
+        throw new Error('Invalid quote response structure');
+      }
+
+      // Update the buy amount in the UI
+      const buyAmount = response.data.buyAmount || response.data.expectedOutput;
+      if (buyAmount && buyToken) {
+        const formattedBuyAmount = formatUnits(buyAmount, buyToken.decimals);
+        setBuyAmount(formattedBuyAmount);
       }
 
       return response.data;
     } catch (error) {
       console.error('Error fetching quote:', error);
+      setBuyAmount('0');
       throw error;
     }
   };
@@ -531,102 +552,133 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Update handleSwap to handle L2-specific requirements
   const handleSwap = async () => {
-    if (!walletClient || !publicClient || !address || !chainId) {
-      setSwapError('Please connect your wallet');
-      return;
-    }
-
     try {
-      setSwapStatus('loading');
-      setSwapError(null);
+      if (!sellToken || !buyToken || !sellAmount || !address || !walletClient) {
+        console.error('Missing required parameters:', { sellToken, buyToken, sellAmount, address });
+        throw new Error('Missing required swap parameters');
+      }
 
-      // Parse the sell amount with proper decimals
-      const parsedSellAmount = parseUnits(sellAmount, sellToken.decimals);
+      // Format sell amount with proper decimals
+      const formattedSellAmount = parseUnits(
+        sellAmount,
+        sellToken.decimals
+      ).toString();
 
-      // 1. Check allowance
-      await checkAndSetAllowance(
-        sellToken,
-        parsedSellAmount,
-        address as `0x${string}`,
-        walletClient,
-        publicClient
+      // Only check approval for non-native tokens
+      if (sellToken.address.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
+        console.log('Checking token approval for:', sellToken.address);
+        
+        try {
+          // Create contract instance
+          const tokenContract = {
+            address: sellToken.address as `0x${string}`,
+            abi: ERC20_ABI,
+          };
+
+          const proxyAddress = EXCHANGE_PROXY_ADDRESSES[chainId];
+          if (!proxyAddress) {
+            throw new Error(`No proxy address found for chain ${chainId}`);
+          }
+
+          console.log('Checking allowance for proxy:', proxyAddress);
+
+          // Read allowance using publicClient
+          const allowanceData = await publicClient.readContract({
+            ...tokenContract,
+            functionName: 'allowance',
+            args: [address as `0x${string}`, proxyAddress as `0x${string}`],
+          });
+
+          const currentAllowance = BigInt(allowanceData?.toString() || '0');
+          const sellAmountBigInt = BigInt(formattedSellAmount);
+
+          console.log('Current allowance:', currentAllowance.toString());
+          console.log('Required amount:', sellAmountBigInt.toString());
+
+          if (currentAllowance < sellAmountBigInt) {
+            console.log('Insufficient allowance, approving...');
+
+            // First approve zero
+            const zeroApprovalData = await walletClient.writeContract({
+              ...tokenContract,
+              functionName: 'approve',
+              args: [proxyAddress as `0x${string}`, BigInt(0)],
+            });
+
+            await publicClient.waitForTransactionReceipt({
+              hash: zeroApprovalData,
+            });
+
+            console.log('Zero approval confirmed');
+
+            // Then approve MAX_ALLOWANCE
+            const approvalData = await walletClient.writeContract({
+              ...tokenContract,
+              functionName: 'approve',
+              args: [proxyAddress as `0x${string}`, MAX_ALLOWANCE],
+            });
+
+            const approvalReceipt = await publicClient.waitForTransactionReceipt({
+              hash: approvalData,
+            });
+
+            console.log('Max approval confirmed:', approvalReceipt);
+          } else {
+            console.log('Sufficient allowance exists');
+          }
+        } catch (approvalError) {
+          console.error('Approval error:', approvalError);
+          throw new Error(`Approval failed: ${approvalError.message}`);
+        }
+      }
+
+      // Get quote
+      console.log('Fetching quote...');
+      const quoteResponse = await fetchQuote(
+        chainId,
+        sellToken.address,
+        buyToken.address,
+        formattedSellAmount,
+        address
       );
 
-      // 2. Get the quote
-      const quoteResponse = await fetchQuote({
-        sellToken: sellToken.address === '0x0000000000000000000000000000000000001010' 
-          ? NATIVE_TOKEN_ADDRESS 
-          : sellToken.address,
-        buyToken: buyToken.address === '0x0000000000000000000000000000000000001010'
-          ? NATIVE_TOKEN_ADDRESS
-          : buyToken.address,
-        sellAmount: parsedSellAmount.toString(),
-        takerAddress: address,
-        chainId: chainId,
-        slippagePercentage: '0.01' // 1% slippage
-      });
-
-      if (!quoteResponse?.permit2?.eip712) {
-        throw new Error('Invalid quote response');
+      if (!quoteResponse) {
+        throw new Error('Failed to get quote');
       }
 
-      console.log('Quote received:', quoteResponse);
+      // Add a small delay after approval
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // 3. Sign the permit2 message
-      console.log('Signing Permit2 message...');
-      const signature = await walletClient.signTypedData({
+      // Prepare transaction
+      const txParams = {
         account: address as `0x${string}`,
-        domain: quoteResponse.permit2.eip712.domain,
-        types: quoteResponse.permit2.eip712.types,
-        primaryType: quoteResponse.permit2.eip712.primaryType,
-        message: quoteResponse.permit2.eip712.message
+        to: quoteResponse.to as `0x${string}`,
+        data: quoteResponse.data as `0x${string}`,
+        value: quoteResponse.value ? BigInt(quoteResponse.value) : BigInt(0),
+      };
+
+      console.log('Sending transaction with params:', txParams);
+
+      // Send transaction
+      const tx = await walletClient.sendTransaction(txParams);
+      console.log('Transaction sent:', tx);
+
+      const receipt = await publicClient.waitForTransactionReceipt({ 
+        hash: tx 
       });
-
-      // 4. Prepare transaction data with signature
-      const signatureLengthInHex = numberToHex(size(signature), {
-        size: 32,
-        signed: false,
-      });
-
-      // 5. Combine transaction data with signature
-      const finalTxData = concat([
-        quoteResponse.transaction.data as `0x${string}`,
-        signatureLengthInHex,
-        signature
-      ]);
-
-      // 6. Send the transaction
-      console.log('Sending swap transaction...');
-      const hash = await walletClient.sendTransaction({
-        account: address as `0x${string}`,
-        to: quoteResponse.transaction.to as `0x${string}`,
-        data: finalTxData,
-        value: BigInt(quoteResponse.transaction.value || '0'),
-        gas: BigInt(quoteResponse.transaction.gas || '0'),
-        chainId: chainId
-      });
-
-      console.log('Swap transaction submitted:', hash);
-
-      // 7. Wait for confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash,
-        timeout: 60_000,
-        confirmations: 1
-      });
-
-      console.log('Swap transaction confirmed:', receipt);
-
-      if (receipt.status === 'success') {
-        setSwapStatus('success');
-      } else {
-        throw new Error('Swap transaction failed');
-      }
+      console.log('Transaction confirmed:', receipt);
 
     } catch (error) {
-      console.error('Swap failed:', error);
-      setSwapStatus('error');
+      console.error('Swap error:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Axios error details:', {
+          response: error.response?.data,
+          status: error.response?.status,
+          headers: error.response?.headers
+        });
+      }
       setSwapError(error instanceof Error ? error.message : 'Unknown error occurred');
+      throw error;
     }
   };
 

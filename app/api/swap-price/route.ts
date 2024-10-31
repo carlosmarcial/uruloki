@@ -1,56 +1,70 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
-import { ZEROX_API_URL } from '@/app/constants';
-
-const headers = {
-  '0x-api-key': process.env.ZEROX_API_KEY || '',
-  '0x-version': 'v2'
-};
+import { ZEROX_API_URLS, ZEROX_API_VERSIONS } from '@/app/constants';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     
-    // Get required parameters
-    const chainId = searchParams.get('chainId');
-    let sellToken = searchParams.get('sellToken');
-    let buyToken = searchParams.get('buyToken');
+    const chainId = Number(searchParams.get('chainId'));
+    const sellToken = searchParams.get('sellToken');
+    const buyToken = searchParams.get('buyToken');
     const sellAmount = searchParams.get('sellAmount');
-    const taker = searchParams.get('takerAddress');
+    const takerAddress = searchParams.get('takerAddress');
     const affiliateAddress = searchParams.get('affiliateAddress');
     const affiliateFee = searchParams.get('affiliateFee');
 
-    if (!chainId || !sellToken || !buyToken || !sellAmount || !taker) {
+    if (!chainId || !sellToken || !buyToken || !sellAmount || !takerAddress) {
       return NextResponse.json({ 
         error: 'Missing required parameters' 
       }, { status: 400 });
     }
 
-    // Handle native token addresses
-    if (buyToken === '0x0000000000000000000000000000000000001010') {
-      buyToken = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
-    }
-    if (sellToken === '0x0000000000000000000000000000000000001010') {
-      sellToken = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+    const apiUrl = ZEROX_API_URLS[chainId];
+    const apiVersion = ZEROX_API_VERSIONS[chainId];
+
+    if (!apiUrl) {
+      return NextResponse.json({ 
+        error: `Unsupported chain ID: ${chainId}` 
+      }, { status: 400 });
     }
 
-    // Build 0x API v2 parameters
-    const params = {
+    // Different endpoint and params based on API version
+    const endpoint = apiVersion === 'v2' ? '/swap/v1/quote' : '/swap/v1/quote';
+    
+    const params = apiVersion === 'v2' ? {
+      // v2 parameters
       chainId,
       sellToken,
       buyToken,
       sellAmount,
-      taker,
-      ...(affiliateAddress && affiliateFee ? {
-        swapFeeRecipient: affiliateAddress,
-        swapFeeBps: Math.floor(parseFloat(affiliateFee) * 100).toString(),
-        swapFeeToken: buyToken
-      } : {}),
-      slippageBps: '100' // 1% default slippage
+      taker: takerAddress,
+      affiliateAddress,
+      affiliateFee,
+      enableSlippageProtection: false
+    } : {
+      // v1 parameters
+      sellToken,
+      buyToken,
+      sellAmount,
+      takerAddress,
+      affiliateAddress,
+      affiliateFee,
+      slippagePercentage: '0.01'
     };
 
-    // Call 0x API v2 endpoint
-    const response = await axios.get(`${ZEROX_API_URL}/swap/permit2/quote`, {
+    const headers = {
+      '0x-api-key': process.env.ZEROX_API_KEY || '',
+      Accept: 'application/json'
+    };
+
+    console.log('Sending request to 0x API:', {
+      url: `${apiUrl}${endpoint}`,
+      params,
+      headers
+    });
+
+    const response = await axios.get(`${apiUrl}${endpoint}`, {
       params,
       headers
     });
@@ -61,7 +75,7 @@ export async function GET(request: Request) {
     console.error('Error in swap-price route:', error.response?.data || error);
     return NextResponse.json({ 
       error: error.response?.data?.reason || 'Failed to fetch quote',
-      details: error.response?.data || error.message
+      details: error.response?.data
     }, { status: error.response?.status || 500 });
   }
 }
