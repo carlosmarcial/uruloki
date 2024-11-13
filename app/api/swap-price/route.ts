@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
-import { ZEROX_API_URLS, ZEROX_API_VERSIONS } from '@/app/constants';
+import { 
+  ZEROX_API_VERSIONS,
+  FEE_RECIPIENT 
+} from '@/app/constants';
 
 export async function GET(request: Request) {
   try {
@@ -11,63 +14,96 @@ export async function GET(request: Request) {
     const buyToken = searchParams.get('buyToken');
     const sellAmount = searchParams.get('sellAmount');
     const takerAddress = searchParams.get('takerAddress');
-    const affiliateAddress = searchParams.get('affiliateAddress');
-    const affiliateFee = searchParams.get('affiliateFee');
-
+    
     if (!chainId || !sellToken || !buyToken || !sellAmount || !takerAddress) {
       return NextResponse.json({ 
         error: 'Missing required parameters' 
       }, { status: 400 });
     }
 
-    const apiUrl = ZEROX_API_URLS[chainId];
     const apiVersion = ZEROX_API_VERSIONS[chainId];
-
-    if (!apiUrl) {
-      return NextResponse.json({ 
-        error: `Unsupported chain ID: ${chainId}` 
-      }, { status: 400 });
-    }
-
-    // Different endpoint and params based on API version
-    const endpoint = apiVersion === 'v2' ? '/swap/v1/quote' : '/swap/v1/quote';
+    const isV2 = apiVersion === 'v2';
     
-    const params = apiVersion === 'v2' ? {
-      // v2 parameters
+    // V2 uses unified endpoint, V1 uses chain-specific endpoints
+    const baseUrl = isV2 
+      ? 'https://api.0x.org'
+      : `https://${chainId === 43114 ? 'avalanche' : 'optimism'}.api.0x.org`;
+      
+    const endpoint = isV2 
+      ? '/swap/permit2/quote'
+      : '/swap/v1/quote';
+
+    const params = isV2 ? {
+      // V2 parameters (Optimism)
       chainId,
       sellToken,
       buyToken,
-      sellAmount,
-      taker: takerAddress,
-      affiliateAddress,
-      affiliateFee,
-      enableSlippageProtection: false
+      
+      
+      swapFeeBps: '100',
+      swapFeeRecipient: FEE_RECIPIENT,
+      swapFeeToken: buyToken,
+      slippageBps: '100',
+      intentOnFilling: true,
+      skipValidation: false
     } : {
-      // v1 parameters
+      // V1 parameters (Avalanche)
       sellToken,
       buyToken,
       sellAmount,
       takerAddress,
-      affiliateAddress,
-      affiliateFee,
+      feeRecipient: FEE_RECIPIENT,
+      buyTokenPercentageFee: '0.01',
       slippagePercentage: '0.01'
     };
 
     const headers = {
       '0x-api-key': process.env.ZEROX_API_KEY || '',
-      Accept: 'application/json'
+      'Accept': 'application/json',
+      ...(isV2 && { '0x-version': 'v2' })  // Add version header only for v2
     };
 
     console.log('Sending request to 0x API:', {
-      url: `${apiUrl}${endpoint}`,
+      url: `${baseUrl}${endpoint}`,
       params,
       headers
     });
 
-    const response = await axios.get(`${apiUrl}${endpoint}`, {
+    const response = await axios.get(`${baseUrl}${endpoint}`, {
       params,
       headers
     });
+
+    // Update validation to handle both v1 and v2 responses
+    if (isV2 && !response.data?.transaction?.to) {
+      console.error('Invalid V2 response from 0x API:', response.data);
+      return NextResponse.json({ 
+        error: 'Invalid response from 0x API - missing transaction details' 
+      }, { status: 500 });
+    }
+
+    // For V1 (Avalanche), validate different fields
+    if (!isV2 && (!response.data?.to || !response.data?.data)) {
+      console.error('Invalid V1 response from 0x API:', response.data);
+      return NextResponse.json({ 
+        error: 'Invalid response from 0x API - missing transaction details' 
+      }, { status: 500 });
+    }
+
+    // If using V1, transform the response to match V2 format
+    if (!isV2) {
+      const transformedResponse = {
+        ...response.data,
+        transaction: {
+          to: response.data.to,
+          data: response.data.data,
+          value: response.data.value,
+          gas: response.data.gas,
+          gasPrice: response.data.gasPrice
+        }
+      };
+      return NextResponse.json(transformedResponse);
+    }
 
     return NextResponse.json(response.data);
 

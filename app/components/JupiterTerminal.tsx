@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { Button } from "./button";
+import { DEFAULT_SLIPPAGE_BPS } from '../constants';
+import { fetchJupiterQuote, getSwapInstructions, deserializeInstruction, getAddressLookupTableAccounts } from '../utils/jupiterApi';
 
 const assets = [
   { name: 'SOL', mint: 'So11111111111111111111111111111111111111112', decimals: 9},
@@ -56,7 +58,7 @@ const JupiterTerminal = () => {
     }
   };
 
-  const debounceQuoteCall = useCallback(debounce(getQuote, 500), [fromAsset, toAsset]);
+  const debounceQuoteCall = useCallback(getQuote, 500), [fromAsset, toAsset]);
 
   useEffect(() => {
     if (fromAmount !== '') {
@@ -76,7 +78,7 @@ const JupiterTerminal = () => {
     try {
       const quote = await (
         await fetch(
-          `https://quote-api.jup.ag/v6/quote?inputMint=${fromAsset.mint}&outputMint=${toAsset.mint}&amount=${currentAmount * Math.pow(10, fromAsset.decimals)}&slippage=0.5`
+          `https://quote-api.jup.ag/v6/quote?inputMint=${fromAsset.mint}&outputMint=${toAsset.mint}&amount=${currentAmount * Math.pow(10, fromAsset.decimals)}&slippage=${DEFAULT_SLIPPAGE_BPS / 100}`
         )
       ).json();
 
@@ -95,55 +97,77 @@ const JupiterTerminal = () => {
   }
 
   async function handleSwap() {
-    if (!connected) {
-      console.error('Wallet is not connected');
-      return;
-    }
-    await signAndSendTransaction();
-  }
-
-  async function signAndSendTransaction() {
-    if (!connected || !signTransaction || !publicKey) {
-      console.error('Wallet is not connected or does not support signing transactions');
+    if (!connected || !publicKey) {
+      console.error('Wallet not connected');
       return;
     }
 
     setIsLoading(true);
     try {
-      const { swapTransaction } = await (
-        await fetch('https://quote-api.jup.ag/v6/swap', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            quoteResponse,
-            userPublicKey: publicKey.toString(),
-            wrapAndUnwrapSol: true,
-          }),
-        })
-      ).json();
-
-      const swapTransactionBuf = Buffer.from(swapTransaction, 'base64');
-      const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
-      const signedTransaction = await signTransaction(transaction);
-
-      const rawTransaction = signedTransaction.serialize();
-      const txid = await connection.sendRawTransaction(rawTransaction, {
-        skipPreflight: true,
-        maxRetries: 2,
+      // 1. Get quote
+      const inputAmount = Math.floor(parseFloat(fromAmount) * Math.pow(10, fromAsset.decimals));
+      const quote = await fetchJupiterQuote({
+        inputMint: fromAsset.mint,
+        outputMint: toAsset.mint,
+        amount: inputAmount,
       });
 
-      const latestBlockHash = await connection.getLatestBlockhash();
-      await connection.confirmTransaction({
-        blockhash: latestBlockHash.blockhash,
-        lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
-        signature: txid
-      }, 'confirmed');
-      
-      console.log(`https://solscan.io/tx/${txid}`);
+      console.log('Quote received:', quote);
+
+      // 2. Get swap instructions
+      const swapInstructions = await getSwapInstructions({
+        quoteResponse: quote,
+        userPublicKey: publicKey.toString(),
+      });
+
+      // 3. Prepare transaction
+      const {
+        computeBudgetInstructions,
+        setupInstructions,
+        swapInstruction,
+        cleanupInstruction,
+        addressLookupTableAddresses,
+      } = swapInstructions;
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+      const lookupTableAccounts = await getAddressLookupTableAccounts(
+        connection,
+        addressLookupTableAddresses || []
+      );
+
+      const messageV0 = new TransactionMessage({
+        payerKey: publicKey,
+        recentBlockhash: blockhash,
+        instructions: [
+          ...(computeBudgetInstructions || []).map(deserializeInstruction),
+          ...(setupInstructions || []).map(deserializeInstruction),
+          deserializeInstruction(swapInstruction),
+          ...(cleanupInstruction ? [deserializeInstruction(cleanupInstruction)] : []),
+        ],
+      }).compileToV0Message(lookupTableAccounts);
+
+      const transaction = new VersionedTransaction(messageV0);
+
+      // 4. Sign and send transaction
+      const signed = await signTransaction(transaction);
+      const signature = await connection.sendRawTransaction(signed.serialize());
+
+      // 5. Confirm transaction
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight
+      });
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${confirmation.value.err}`);
+      }
+
+      console.log(`https://solscan.io/tx/${signature}`);
     } catch (error) {
-      console.error('Error signing or sending the transaction:', error);
+      console.error('Swap failed:', error);
+      throw error;
     } finally {
       setIsLoading(false);
     }

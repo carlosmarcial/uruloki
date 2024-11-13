@@ -1,81 +1,12 @@
-import axios from 'axios';
-import { JUPITER_QUOTE_API_URL, JUPITER_SWAP_API_URL } from '../constants';
-import { PublicKey } from '@solana/web3.js';
-
-// Define the constants
-export const NATIVE_SOL_MINT = '11111111111111111111111111111111';
-export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112'; // Example address for wrapped SOL
-
-interface QuoteParams {
-  inputMint: string;
-  outputMint: string;
-  amount: string;
-  slippageBps: number;
-  maxAccounts?: number;
-}
-
-export const fetchJupiterQuote = async (params: QuoteParams) => {
-  const { inputMint, outputMint, amount, slippageBps, maxAccounts } = params;
-  const endpoint = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippageBps}${maxAccounts ? `&maxAccounts=${maxAccounts}` : ''}`;
-  
-  console.log('Fetching Jupiter quote with URL:', endpoint);
-
-  try {
-    const response = await fetch(endpoint);
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Jupiter API error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('Error in fetchJupiterQuote:', error);
-    throw error;
-  }
-};
-
-export const fetchSwapInstructions = async ({
-  quoteResponse,
-  userPublicKey,
-  wrapUnwrapSOL = true,
-  feeAccount,
-  computeUnitPriceMicroLamports = 'auto'
-}: {
-  quoteResponse: any;
-  userPublicKey: string;
-  wrapUnwrapSOL?: boolean;
-  feeAccount?: string;
-  computeUnitPriceMicroLamports?: number | 'auto';
-}) => {
-  try {
-    const response = await fetch('/api/jupiter/swap', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        quoteResponse,
-        userPublicKey,
-        wrapUnwrapSOL,
-        feeAccount,
-        computeUnitPriceMicroLamports,
-        asLegacyTransaction: false
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`HTTP error! status: ${response.status}, message: ${JSON.stringify(errorData)}`);
-    }
-
-    const data = await response.json();
-    console.log('Swap instructions response:', data);
-    return data;
-  } catch (error) {
-    console.error('Error fetching swap instructions:', error);
-    throw error;
-  }
-};
+import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
+import { 
+  DEFAULT_SLIPPAGE_BPS, 
+  JUPITER_QUOTE_API_URL,
+  JUPITER_SWAP_API_URL,
+  JUPITER_SWAP_INSTRUCTIONS_API_URL,
+  NATIVE_SOL_MINT,
+  WRAPPED_SOL_MINT
+} from '../constants';
 
 export const getInputMint = (tokenAddress: string) => {
   return tokenAddress === NATIVE_SOL_MINT ? WRAPPED_SOL_MINT : tokenAddress;
@@ -85,27 +16,145 @@ export const getOutputMint = (tokenAddress: string) => {
   return tokenAddress === NATIVE_SOL_MINT ? WRAPPED_SOL_MINT : tokenAddress;
 };
 
-export const fetchJupiterSwapInstructions = async (quoteResponse: any, userPublicKey: string) => {
-  console.log('Fetching swap instructions with params:', { quoteResponse, userPublicKey });
-  
-  const response = await fetch('https://quote-api.jup.ag/v6/swap-instructions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      quoteResponse,
-      userPublicKey,
-      wrapAndUnwrapSol: true,
-    })
-  });
+interface JupiterQuoteResponse {
+  inputMint: string;
+  outputMint: string;
+  inAmount: string;
+  outAmount: string;
+  otherAmountThreshold: string;
+  swapMode: string;
+  slippageBps: number;
+  platformFee?: any;
+  priceImpactPct: number;
+  routePlan: any[];
+  contextSlot?: number;
+  timeTaken?: number;
+}
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+export const fetchJupiterQuote = async ({
+  inputMint,
+  outputMint,
+  amount,
+  slippageBps = 50,
+  maxAccounts = 64
+}: {
+  inputMint: string;
+  outputMint: string;
+  amount: number;
+  slippageBps?: number;
+  maxAccounts?: number;
+}) => {
+  try {
+    const url = new URL(JUPITER_QUOTE_API_URL);
+    
+    // Add query parameters
+    const params = {
+      inputMint,
+      outputMint,
+      amount: Math.round(amount).toString(),
+      slippageBps: slippageBps.toString(),
+      maxAccounts: maxAccounts.toString()
+    };
+    
+    Object.entries(params).forEach(([key, value]) => {
+      url.searchParams.append(key, value);
+    });
+
+    console.log('Fetching Jupiter quote with URL:', url.toString());
+
+    const response = await fetch(url.toString());
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Jupiter quote API error: ${response.status}, ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data || !data.outAmount) {
+      console.error('Invalid quote response:', data);
+      throw new Error('Invalid quote format received');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error fetching Jupiter quote:', error);
+    throw error;
   }
+};
 
-  const data = await response.json();
-  console.log('Swap instructions response:', data);
+// Add this interface for the swap request
+interface SwapRequestBody {
+  quoteResponse: any;
+  userPublicKey: string;
+  wrapUnwrapSOL?: boolean;
+  computeUnitPriceMicroLamports?: number | null;
+  asLegacyTransaction?: boolean;
+}
 
-  return data;
+interface SwapInstructionsRequest {
+  swapRequest: SwapRequestBody;
+}
+
+interface SwapInstructionsResponse {
+  swapTransaction: string;
+  lastValidBlockHeight: number;
+  prioritizationFeeLamports?: number;
+  computeUnitLimit?: number;
+  prioritizationType?: {
+    priorityFee?: number;
+    computeUnits?: number;
+  };
+}
+
+export const fetchJupiterSwapInstructions = async ({ swapRequest }: SwapInstructionsRequest): Promise<SwapInstructionsResponse> => {
+  try {
+    const response = await fetch(`${JUPITER_SWAP_API_URL}/swap`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(swapRequest)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Swap instructions API error: ${response.status}, ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching swap instructions:', error);
+    throw error;
+  }
+};
+
+export const deserializeInstruction = (instruction: any): TransactionInstruction => {
+  return new TransactionInstruction({
+    programId: new PublicKey(instruction.programId),
+    keys: instruction.accounts.map((key: any) => ({
+      pubkey: new PublicKey(key.pubkey),
+      isSigner: key.isSigner,
+      isWritable: key.isWritable,
+    })),
+    data: Buffer.from(instruction.data, 'base64'),
+  });
+};
+
+export const getAddressLookupTableAccounts = async (
+  connection: Connection,
+  addresses: string[]
+) => {
+  const accounts = await Promise.all(
+    addresses.map(async (address) => {
+      const accountInfo = await connection.getAccountInfo(new PublicKey(address));
+      if (!accountInfo) return null;
+      return {
+        key: new PublicKey(address),
+        state: accountInfo.data,
+      };
+    })
+  );
+  return accounts.filter(Boolean);
 };

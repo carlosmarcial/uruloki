@@ -1,5 +1,6 @@
 import { Connection, PublicKey, Transaction, TransactionSignature, Commitment, VersionedTransaction, SendOptions } from '@solana/web3.js';
 import { SOLANA_RPC_ENDPOINTS } from '../constants';
+import axios from 'axios';
 
 export function getConnection(commitment: Commitment = 'confirmed'): Connection {
   return new Connection(SOLANA_RPC_ENDPOINTS.http, commitment);
@@ -82,3 +83,62 @@ export const checkTransactionOnExplorer = async (signature: string): Promise<'su
     return 'pending'; // Assume pending if there's an error checking
   }
 };
+
+export const fetchSolanaTokens = async (): Promise<SolanaToken[]> => {
+  try {
+    const response = await axios.get('https://quote-api.jup.ag/v6/tokens');
+    
+    if (!response.data) {
+      throw new Error('No data received from Jupiter API');
+    }
+
+    const tokens = Object.values(response.data)
+      .filter((token: any) => 
+        token && 
+        token.address && 
+        token.symbol && 
+        token.name && 
+        typeof token.decimals === 'number'
+      )
+      .map((token: any) => ({
+        address: token.address,
+        symbol: token.symbol,
+        name: token.name,
+        decimals: token.decimals,
+        logoURI: token.logoURI || '',
+        tags: token.tags || [],
+        chainId: 'solana'
+      }));
+
+    if (!tokens.length) {
+      throw new Error('No valid tokens found');
+    }
+
+    return tokens;
+  } catch (error) {
+    console.error('Error fetching Solana tokens:', error);
+    // Return a minimal default token list instead of throwing
+    return [
+      {
+        address: 'So11111111111111111111111111111111111111112',
+        symbol: 'SOL',
+        name: 'Solana',
+        decimals: 9,
+        logoURI: '/solana-logo.png', // Use local fallback image
+        tags: ['native'],
+        chainId: 'solana'
+      }
+    ];
+  }
+};
+
+export interface SolanaToken {
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  logoURI: string;
+  tags: string[];
+  daily_volume: number;
+  chainId: 'solana';
+}

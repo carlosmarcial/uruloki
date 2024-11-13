@@ -19,7 +19,7 @@ export const MAGIC_CALLDATA_STRING = "f".repeat(130);
 export const MAX_ALLOWANCE = BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935");
 export const GAS_LIMIT_BUFFER = 1.1;
 export const DEFAULT_DEADLINE = Math.floor(Date.now() / 1000) + 20 * 60;
-export const DEFAULT_SLIPPAGE_BPS = 500;
+export const DEFAULT_SLIPPAGE_BPS = 50;
 
 // Fee Related Constants
 export const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
@@ -49,11 +49,11 @@ export const ZEROX_API_URLS: { [chainId: number]: string } = {
 
 // Add API versions for different chains
 export const ZEROX_API_VERSIONS: { [chainId: number]: string } = {
-  [ETHEREUM_CHAIN_ID]: 'v2',
-  [POLYGON_CHAIN_ID]: 'v2',
-  [OPTIMISM_CHAIN_ID]: 'v2',
-  [ARBITRUM_CHAIN_ID]: 'v2',
-  [AVALANCHE_CHAIN_ID]: 'v1', // Avalanche still uses v1
+  1: 'v2',    // Ethereum
+  10: 'v2',   // Optimism
+  137: 'v2',  // Polygon
+  42161: 'v2', // Arbitrum
+  43114: 'v1'  // Avalanche
 };
 
 // Exchange Proxy Addresses
@@ -238,6 +238,7 @@ export const SOLANA_TOKENS_BY_ADDRESS = SOLANA_TOKENS.reduce((acc, token) => {
 
 // Solana Specific Constants
 export const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
 export const JUPITER_QUOTE_API_URL = 'https://quote-api.jup.ag/v6/quote';
 export const JUPITER_SWAP_API_URL = 'https://quote-api.jup.ag/v6';
 export const JUPITER_SWAP_INSTRUCTIONS_API_URL = 'https://quote-api.jup.ag/v6/swap-instructions';

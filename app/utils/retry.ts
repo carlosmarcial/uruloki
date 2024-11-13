@@ -1,18 +1,30 @@
+interface RetryOptions {
+  retries: number;
+  minTimeout: number;
+  maxTimeout: number;
+}
+
 export async function retry<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  delay: number = 1000
+  options: RetryOptions
 ): Promise<T> {
-  let lastError: Error | null = null;
-  for (let i = 0; i < maxRetries; i++) {
+  const { retries, minTimeout, maxTimeout } = options;
+  let lastError: Error;
+
+  for (let i = 0; i < retries; i++) {
     try {
       return await fn();
     } catch (error) {
-      console.warn(`Attempt ${i + 1} failed, retrying in ${delay}ms...`);
-      lastError = error instanceof Error ? error : new Error(String(error));
-      await new Promise(resolve => setTimeout(resolve, delay));
-      delay *= 2; // Exponential backoff
+      lastError = error as Error;
+      if (i === retries - 1) break;
+
+      const timeout = Math.min(
+        Math.max(minTimeout * Math.pow(2, i), minTimeout),
+        maxTimeout
+      );
+      await new Promise(resolve => setTimeout(resolve, timeout));
     }
   }
-  throw lastError || new Error('Max retries reached');
+
+  throw lastError!;
 }

@@ -17,7 +17,7 @@ import {
   useSignTypedData, 
   useSendTransaction, 
   usePublicClient, 
-  useWalletClient,
+  useWalletClient
 } from 'wagmi';
 import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -44,7 +44,7 @@ import { fetchJupiterQuote, getSwapInstructions, NATIVE_SOL_MINT, WRAPPED_SOL_MI
 import { Connection, sendAndConfirmTransaction, PublicKey, Transaction, VersionedTransaction, TransactionInstruction, Commitment, AddressLookupTableProgram, TransactionMessage, AddressLookupTableAccount, ConnectionConfig, VersionedMessage } from '@solana/web3.js';
 import { getConnection, getLatestBlockhashWithRetry, sendAndConfirmTransactionWithRetry, getWebSocketEndpoint } from '../utils/solanaUtils';
 import { SOLANA_RPC_ENDPOINT } from '../constants';
-import { Token, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Token as SPLToken, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BigNumber from 'bignumber.js';
 import { SOLANA_TOKENS_BY_SYMBOL } from '../constants';
 import { retry } from '@/app/utils/retry';
@@ -76,6 +76,7 @@ import { fetchPolygonTokens } from '../utils/polygonUtils';
 import { fetchOptimismTokens } from '../utils/optimismUtils';
 import { ARBITRUM_CHAIN_ID, POLYGON_CHAIN_ID, OPTIMISM_CHAIN_ID, ETHEREUM_CHAIN_ID } from '@app/constants';
 import { fetchAvalancheTokens } from '../utils/avalancheUtils';
+import { fetchSolanaTokens } from '../utils/solanaUtils'; // Make sure this import exists
 
 
 
@@ -184,6 +185,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
   setActiveChain: (chain: 'ethereum' | 'solana') => void;
 }) {
+  // State declarations must be at the top level of your component
+  const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
+  const [showTokenSelect, setShowTokenSelect] = useState<boolean>(false);
+  const [tokens, setTokens] = useState<Token[]>([]);
+  const [solanaTokens, setSolanaTokens] = useState<SolanaToken[]>([]);
+
   // Use the regular HTTP connection
   const connection = getConnection();
   
@@ -191,8 +198,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const wsEndpoint = getWebSocketEndpoint();
 
   // State declarations
-  const [tokens, setTokens] = useState<Token[]>([]);
-  const [solanaTokens, setSolanaTokens] = useState<SolanaToken[]>([]);
   const [sellToken, setSellToken] = useState<Token | SolanaToken | null>(null);
   const [buyToken, setBuyToken] = useState<Token | SolanaToken | null>(null);
   const [sellAmount, setSellAmount] = useState<string>('');
@@ -421,51 +426,28 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   // Update the fetchQuote function
-  const fetchQuote = async (
-    chainId: number,
-    sellToken: string,
-    buyToken: string,
-    sellAmount: string,
-    takerAddress: string,
-  ) => {
+  const fetchQuote = async () => {
     try {
-      console.log('Fetching quote with params:', {
-        chainId,
-        sellToken,
-        buyToken,
-        sellAmount,
-        takerAddress
-      });
-
       const response = await axios.get('/api/swap-price', {
         params: {
           chainId,
-          sellToken,
-          buyToken,
-          sellAmount,
-          takerAddress,
-          affiliateAddress: FEE_RECIPIENT,
-          affiliateFee: AFFILIATE_FEE
+          sellToken: sellToken?.address as `0x${string}`,
+          buyToken: buyToken?.address as `0x${string}`,
+          sellAmount: parseUnits(sellAmount, sellToken?.decimals || 0).toString(),
+          takerAddress: address,
         }
       });
-
-      console.log('Quote response:', response.data);
-
-      if (!response.data) {
-        throw new Error('Invalid quote response structure');
+      
+      console.log('Raw quote response:', response.data);
+      
+      if (!response.data?.transaction?.to || !response.data?.transaction?.data) {
+        console.error('Invalid quote response:', response.data);
+        throw new Error('Invalid quote response - missing transaction details');
       }
-
-      // Update the buy amount in the UI
-      const buyAmount = response.data.buyAmount || response.data.expectedOutput;
-      if (buyAmount && buyToken) {
-        const formattedBuyAmount = formatUnits(buyAmount, buyToken.decimals);
-        setBuyAmount(formattedBuyAmount);
-      }
-
+      
       return response.data;
     } catch (error) {
       console.error('Error fetching quote:', error);
-      setBuyAmount('0');
       throw error;
     }
   };
@@ -553,131 +535,86 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Update handleSwap to handle L2-specific requirements
   const handleSwap = async () => {
     try {
-      if (!sellToken || !buyToken || !sellAmount || !address || !walletClient) {
-        console.error('Missing required parameters:', { sellToken, buyToken, sellAmount, address });
-        throw new Error('Missing required swap parameters');
+      const quote = await fetchQuote();
+      console.log('Raw quote response:', quote);
+
+      if (!quote?.transaction?.to || !quote?.transaction?.data) {
+        throw new Error('Invalid quote response - missing transaction details');
       }
 
-      // Format sell amount with proper decimals
-      const formattedSellAmount = parseUnits(
-        sellAmount,
-        sellToken.decimals
-      ).toString();
+      let txData = quote.transaction.data as `0x${string}`;
 
-      // Only check approval for non-native tokens
-      if (sellToken.address.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
-        console.log('Checking token approval for:', sellToken.address);
+      if (quote.permit2?.eip712) {
+        console.log('Signing permit2 data...');
+        const signature = await signTypedDataAsync(quote.permit2.eip712);
         
-        try {
-          // Create contract instance
-          const tokenContract = {
-            address: sellToken.address as `0x${string}`,
-            abi: ERC20_ABI,
-          };
-
-          const proxyAddress = EXCHANGE_PROXY_ADDRESSES[chainId];
-          if (!proxyAddress) {
-            throw new Error(`No proxy address found for chain ${chainId}`);
-          }
-
-          console.log('Checking allowance for proxy:', proxyAddress);
-
-          // Read allowance using publicClient
-          const allowanceData = await publicClient.readContract({
-            ...tokenContract,
-            functionName: 'allowance',
-            args: [address as `0x${string}`, proxyAddress as `0x${string}`],
+        const MAGIC_CALLDATA_STRING = "f".repeat(130);
+        if (txData.includes(MAGIC_CALLDATA_STRING)) {
+          // Replace the magic string with the signature
+          txData = txData.replace(
+            MAGIC_CALLDATA_STRING, 
+            signature.slice(2)
+          ) as `0x${string}`;
+        } else {
+          // Append signature length and signature
+          const signatureLengthInHex = numberToHex(size(signature), {
+            signed: false,
+            size: 32,
           });
-
-          const currentAllowance = BigInt(allowanceData?.toString() || '0');
-          const sellAmountBigInt = BigInt(formattedSellAmount);
-
-          console.log('Current allowance:', currentAllowance.toString());
-          console.log('Required amount:', sellAmountBigInt.toString());
-
-          if (currentAllowance < sellAmountBigInt) {
-            console.log('Insufficient allowance, approving...');
-
-            // First approve zero
-            const zeroApprovalData = await walletClient.writeContract({
-              ...tokenContract,
-              functionName: 'approve',
-              args: [proxyAddress as `0x${string}`, BigInt(0)],
-            });
-
-            await publicClient.waitForTransactionReceipt({
-              hash: zeroApprovalData,
-            });
-
-            console.log('Zero approval confirmed');
-
-            // Then approve MAX_ALLOWANCE
-            const approvalData = await walletClient.writeContract({
-              ...tokenContract,
-              functionName: 'approve',
-              args: [proxyAddress as `0x${string}`, MAX_ALLOWANCE],
-            });
-
-            const approvalReceipt = await publicClient.waitForTransactionReceipt({
-              hash: approvalData,
-            });
-
-            console.log('Max approval confirmed:', approvalReceipt);
-          } else {
-            console.log('Sufficient allowance exists');
-          }
-        } catch (approvalError) {
-          console.error('Approval error:', approvalError);
-          throw new Error(`Approval failed: ${approvalError.message}`);
+          txData = concat([
+            txData, 
+            signatureLengthInHex, 
+            signature
+          ]) as `0x${string}`;
         }
       }
 
-      // Get quote
-      console.log('Fetching quote...');
-      const quoteResponse = await fetchQuote(
-        chainId,
-        sellToken.address,
-        buyToken.address,
-        formattedSellAmount,
-        address
-      );
-
-      if (!quoteResponse) {
-        throw new Error('Failed to get quote');
-      }
-
-      // Add a small delay after approval
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Prepare transaction
+      // Format transaction parameters
       const txParams = {
-        account: address as `0x${string}`,
-        to: quoteResponse.to as `0x${string}`,
-        data: quoteResponse.data as `0x${string}`,
-        value: quoteResponse.value ? BigInt(quoteResponse.value) : BigInt(0),
+        to: quote.transaction.to as `0x${string}`,
+        data: txData,
+        value: BigInt(quote.transaction.value || '0'),
+        chainId,
+        gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
+        // Add metadata for better MetaMask display
+        meta: {
+          title: 'Swap via 0x',
+          description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
+            formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
+          } ${buyToken.symbol}`,
+          tokens: [
+            {
+              address: sellToken.address,
+              symbol: sellToken.symbol,
+              decimals: sellToken.decimals,
+              amount: sellAmount
+            },
+            {
+              address: buyToken.address,
+              symbol: buyToken.symbol,
+              decimals: buyToken.decimals,
+              amount: quote.buyAmount
+            }
+          ]
+        }
       };
 
       console.log('Sending transaction with params:', txParams);
 
-      // Send transaction
-      const tx = await walletClient.sendTransaction(txParams);
-      console.log('Transaction sent:', tx);
+      const tx = await sendTransactionAsync(txParams);
+      console.log('Transaction submitted:', tx);
 
-      const receipt = await publicClient.waitForTransactionReceipt({ 
-        hash: tx 
+      // Wait for transaction confirmation
+      const receipt = await waitForTransaction({
+        hash: tx.hash,
       });
+
       console.log('Transaction confirmed:', receipt);
+      
+      // Handle success (e.g., show success message, update UI)
 
     } catch (error) {
       console.error('Swap error:', error);
-      if (axios.isAxiosError(error)) {
-        console.error('Axios error details:', {
-          response: error.response?.data,
-          status: error.response?.status,
-          headers: error.response?.headers
-        });
-      }
-      setSwapError(error instanceof Error ? error.message : 'Unknown error occurred');
       throw error;
     }
   };
@@ -812,41 +749,48 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setSelectingTokenFor(null);
   };
 
-  const handleTokenSelect = (token: Token | SolanaToken) => {
-    console.log('Token selected:', token);
-    
+  const handleTokenSelect = (token: Token) => {
+    const selectedToken = {
+      ...token,
+      logoURI: token.logoURI || '',
+      _timestamp: Date.now(), // Add timestamp for forcing re-render
+    };
+
     if (selectingTokenFor === 'sell') {
-      setSellToken(token);
+      setSellToken(selectedToken);
     } else if (selectingTokenFor === 'buy') {
-      setBuyToken(token);
+      setBuyToken(selectedToken);
     }
     
     setIsTokenSelectModalOpen(false);
     setSelectingTokenFor(null);
   };
 
-  const renderTokenSelector = (token: Token | SolanaToken | null, onClick: () => void) => (
-    <div className="flex items-center justify-between bg-gray-800 rounded-full px-4 py-2 cursor-pointer" onClick={onClick}>
+  const renderTokenSelector = (token: Token | null, onClick: () => void) => (
+    <button
+      onClick={onClick}
+      className="flex items-center space-x-2 bg-[#1a1b1f] rounded-2xl px-4 py-2 hover:bg-[#2c2d33]"
+    >
       {token ? (
         <>
-          <div className="flex items-center">
+          <div 
+            className="w-8 h-8 rounded-full overflow-hidden"
+            key={`${token.address}-${token.logoURI}-${token._timestamp}`} // Add key here
+          >
             <TokenImage
               src={token.logoURI}
-              alt={token.name}
-              width={24}
-              height={24}
-              className="rounded-full"
+              alt={token.symbol}
+              width={32}
+              height={32}
+              className="w-full h-full object-cover"
             />
-            <span className="text-white font-semibold">{token.symbol}</span>
           </div>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
+          <span className="text-white">{token.symbol}</span>
         </>
       ) : (
-        <span className="text-gray-400">Select token</span>
+        <span className="text-white">Select Token</span>
       )}
-    </div>
+    </button>
   );
 
   const chainOptions = [
@@ -876,12 +820,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     </select>
   );
 
-  const [slippageTolerance, setSlippageTolerance] = useState<number>(DEFAULT_SLIPPAGE_BPS);
-
-  // Add this function to update slippage tolerance
-  const updateSlippageTolerance = (newSlippage: number) => {
-    setSlippageTolerance(newSlippage);
-  };
+  const [slippageTolerance, setSlippageTolerance] = useState<number>(300); // Fixed 3% (300 basis points)
 
   const [swapStatus, setSwapStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [swapMessage, setSwapMessage] = useState<string>('');
@@ -992,122 +931,268 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   const handleConfirmSwap = async () => {
-    setIsConfirmationModalOpen(false);
     try {
-      await executeSolanaSwap();
-    } catch (error: any) {
+      if (!sellToken || !buyToken || !sellAmount) {
+        throw new Error('Missing required swap parameters');
+      }
+
+      // Convert sell amount to proper units based on decimals
+      const amountInBaseUnits = (Number(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
+
+      console.log('Fetching quote with params:', {
+        inputMint: sellToken.address,
+        outputMint: buyToken.address,
+        amount: amountInBaseUnits
+      });
+
+      // Fetch quote first
+      const quoteResponse = await fetchJupiterQuote({
+        inputMint: sellToken.address,
+        outputMint: buyToken.address,
+        amount: amountInBaseUnits,
+        slippageBps: '50'
+      });
+
+      if (!quoteResponse) {
+        throw new Error('Failed to get quote');
+      }
+
+      console.log('Received quote:', quoteResponse);
+
+      // Execute the swap with the quote
+      const signature = await executeSolanaSwap(quoteResponse);
+      console.log('Swap executed successfully:', signature);
+
+      // Handle success
+      setSwapStatus('success');
+      setSwapTxSignature(signature);
+      onClose(); // Close the confirmation modal
+
+    } catch (error) {
       console.error('Swap execution failed:', error);
       setSwapStatus('error');
-      setSwapMessage(`Swap failed: ${error.message || 'Unknown error'}`);
+      setSwapError(error instanceof Error ? error.message : 'Unknown error occurred');
     }
   };
 
   const [transactionSignature, setTransactionSignature] = useState<string | null>(null);
   const [transactionStatus, setTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
 
-  const executeSolanaSwap = async () => {
-    console.group('Solana Swap Execution');
+  const executeSolanaSwap = async (quoteResponse: any) => {
     try {
-      setTransactionStatus('pending');
-      checkWalletReady();
-
-      if (!sellToken || !buyToken || !sellAmount || !solanaWallet.publicKey) {
-        throw new Error('Missing required swap parameters');
+      // Validate required parameters
+      if (!solanaWallet || !solanaWallet.publicKey) {
+        throw new Error('Wallet not connected');
       }
-
-      const inputMint = getInputMint(sellToken.address);
-      const outputMint = getOutputMint(buyToken.address);
-      const amount = (parseFloat(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
-
-      console.log('Fetching Jupiter quote');
-      const quoteResponse = await fetchJupiterQuote({
-        inputMint,
-        outputMint,
-        amount,
-        slippageBps: DEFAULT_SLIPPAGE_BPS,
-        maxAccounts: 64,
-      });
-      console.log('Jupiter quote received:', quoteResponse);
 
       if (!quoteResponse) {
-        throw new Error('Invalid quote response');
+        throw new Error('Missing quote response');
       }
 
-      console.log('Fetching swap instructions');
-      const swapInstructions = await fetchJupiterSwapInstructions(quoteResponse, solanaWallet.publicKey.toString());
-      console.log('Swap instructions received:', swapInstructions);
+      // Check wallet and balance
+      checkWalletReady();
+      await checkBalance(solanaWallet);
 
-      const {
-        computeBudgetInstructions,
-        setupInstructions,
-        swapInstruction,
-        cleanupInstruction,
-        addressLookupTableAddresses,
-      } = swapInstructions;
+      // Get a fresh quote with fixed 3% slippage
+      const freshQuote = await fetchJupiterQuote({
+        inputMint: quoteResponse.inputMint,
+        outputMint: quoteResponse.outputMint,
+        amount: Number(quoteResponse.inAmount),
+        slippageBps: 300, // Fixed 3% slippage
+        maxAccounts: 64
+      });
 
-      const deserializeInstruction = (instruction) => {
-        return {
-          programId: new PublicKey(instruction.programId),
-          keys: instruction.accounts.map((key) => ({
-            pubkey: new PublicKey(key.pubkey),
-            isSigner: key.isSigner,
-            isWritable: key.isWritable,
-          })),
-          data: Buffer.from(instruction.data, 'base64'),
-        };
-      };
+      // Get latest blockhash before creating swap instructions
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
 
-      const instructions = [
-        ...(computeBudgetInstructions || []).map(deserializeInstruction),
-        ...(setupInstructions || []).map(deserializeInstruction),
-        deserializeInstruction(swapInstruction),
-        cleanupInstruction ? deserializeInstruction(cleanupInstruction) : null,
-      ].filter(Boolean);
+      // Get swap instructions from Jupiter API
+      const swapResponse = await fetchJupiterSwapInstructions({
+        swapRequest: {
+          quoteResponse: freshQuote,
+          userPublicKey: solanaWallet.publicKey.toString(),
+          wrapUnwrapSOL: true,
+          computeUnitPriceMicroLamports: null,
+          asLegacyTransaction: false,
+          slippageBps: 300, // Fixed 3% slippage
+          dynamicComputeUnitLimit: true,
+          prioritizationFeeLamports: "auto"
+        }
+      });
 
-      const getAddressLookupTableAccounts = async (keys: string[]): Promise<AddressLookupTableAccount[]> => {
-        const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
-          keys.map((key) => new PublicKey(key))
-        );
+      if (!swapResponse || !swapResponse.swapTransaction) {
+        throw new Error('Failed to get swap transaction');
+      }
 
-        return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
-          const addressLookupTableAddress = keys[index];
-          if (accountInfo) {
-            const addressLookupTableAccount = new AddressLookupTableAccount({
-              key: new PublicKey(addressLookupTableAddress),
-              state: AddressLookupTableAccount.deserialize(accountInfo.data),
-            });
-            acc.push(addressLookupTableAccount);
-          }
-          return acc;
-        }, [] as AddressLookupTableAccount[]);
-      };
+      console.log('Received swap response:', swapResponse);
 
-      const addressLookupTableAccounts = await getAddressLookupTableAccounts(addressLookupTableAddresses || []);
+      // Decode the serialized transaction
+      const swapTransactionBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
+      const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
 
-      const latestBlockhash = await connection.getLatestBlockhash();
-      const messageV0 = new TransactionMessage({
-        payerKey: solanaWallet.publicKey,
-        recentBlockhash: latestBlockhash.blockhash,
-        instructions,
-      }).compileToV0Message(addressLookupTableAccounts);
+      // Update the transaction with fresh blockhash
+      transaction.message.recentBlockhash = blockhash;
 
-      const transaction = new VersionedTransaction(messageV0);
+      // Sign the transaction
+      if (!solanaWallet.signTransaction) {
+        throw new Error('Wallet does not support transaction signing');
+      }
 
-      console.log('Requesting transaction signature');
       const signedTransaction = await solanaWallet.signTransaction(transaction);
 
-      console.log('Sending transaction');
-      const txid = await connection.sendTransaction(signedTransaction);
-      console.log('Transaction sent:', txid);
+      // Send transaction with retries
+      const signature = await retry(
+        async () => {
+          const rawTransaction = signedTransaction.serialize();
+          return await connection.sendRawTransaction(rawTransaction, {
+            skipPreflight: true,
+            maxRetries: 3,
+            preflightCommitment: 'processed',
+            minContextSlot: swapResponse.contextSlot,
+            computeUnits: swapResponse.computeUnitLimit,
+            prioritizationFee: swapResponse.prioritizationFeeLamports
+          });
+        },
+        {
+          retries: 5,
+          minTimeout: 250,
+          maxTimeout: 1000,
+        }
+      );
 
-      setTransactionStatus('success');
-      setSwapMessage(`Swap successful! Transaction ID: ${txid}`);
+      console.log('Transaction sent:', signature);
+
+      // Wait for transaction to be visible on the network
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Enhanced confirmation handling with more retries
+      const confirmationResult = await retry(
+        async () => {
+          try {
+            // First check transaction status with retries
+            const statusCheckResult = await retry(
+              async () => {
+                const status = await connection.getSignatureStatus(signature, {
+                  searchTransactionHistory: true
+                });
+
+                if (!status?.value) {
+                  throw new Error('Status not found, retrying...');
+                }
+
+                return status;
+              },
+              {
+                retries: 15,
+                minTimeout: 2000,
+                maxTimeout: 4000,
+              }
+            );
+
+            if (statusCheckResult.value.err) {
+              console.error('Transaction error:', statusCheckResult.value.err);
+              throw new Error(`Transaction failed: ${JSON.stringify(statusCheckResult.value.err)}`);
+            }
+
+            // Get latest blockhash for confirmation
+            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+            // Confirm transaction with new blockhash
+            const confirmation = await connection.confirmTransaction({
+              signature,
+              blockhash,
+              lastValidBlockHeight
+            }, 'confirmed');
+
+            if (confirmation.value.err) {
+              throw new Error(`Transaction confirmation failed: ${confirmation.value.err}`);
+            }
+
+            // Additional verification with retries
+            const txInfo = await retry(
+              async () => {
+                const info = await connection.getTransaction(signature, {
+                  maxSupportedTransactionVersion: 0,
+                  commitment: 'confirmed'
+                });
+
+                if (!info) {
+                  throw new Error('Transaction info not found, retrying...');
+                }
+
+                return info;
+              },
+              {
+                retries: 10,
+                minTimeout: 1000,
+                maxTimeout: 2000,
+              }
+            );
+
+            // Check if transaction was successful
+            if (txInfo.meta?.err) {
+              throw new Error(`Transaction metadata shows error: ${JSON.stringify(txInfo.meta.err)}`);
+            }
+
+            return { statusCheckResult, confirmation, txInfo };
+          } catch (error) {
+            console.error('Confirmation error:', error);
+            throw error;
+          }
+        },
+        {
+          retries: 10,
+          minTimeout: 2000,
+          maxTimeout: 4000,
+        }
+      );
+
+      // If we get here, the transaction was successful
+      console.log('Swap executed successfully:', signature);
+      setTransactionSignature(signature);
+      setSwapStatus('success');
+
+      // Update UI with success message
+      if (confirmationResult.txInfo?.meta) {
+        const postTokenBalances = confirmationResult.txInfo.meta.postTokenBalances;
+        console.log('Post-swap token balances:', postTokenBalances);
+      }
+
+      return signature;
+
     } catch (error) {
-      console.error('Swap execution failed:', error);
+      console.error('Solana Swap Execution', error);
       setSwapStatus('error');
-      setSwapMessage(`Swap failed: ${error.message || 'Unknown error'}`);
+      if (error instanceof Error) {
+        setSwapError(error.message);
+        if ('getLogs' in error) {
+          const logs = await (error as any).getLogs?.();
+          console.error('Transaction logs:', logs);
+        }
+      }
+      throw error;
     }
-    console.groupEnd();
+  };
+
+  // Helper function to get address lookup table accounts
+  const getAddressLookupTableAccounts = async (
+    connection: Connection,
+    keys: string[]
+  ): Promise<AddressLookupTableAccount[]> => {
+    const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
+      keys.map((key) => new PublicKey(key))
+    );
+
+    return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
+      const addressLookupTableAddress = keys[index];
+      if (accountInfo) {
+        const addressLookupTableAccount = new AddressLookupTableAccount({
+          key: new PublicKey(addressLookupTableAddress),
+          state: AddressLookupTableAccount.deserialize(accountInfo.data),
+        });
+        acc.push(addressLookupTableAccount);
+      }
+      return acc;
+    }, new Array<AddressLookupTableAccount>());
   };
 
   const confirmTransaction = async (connection: Connection, signature: string, timeout = 120000): Promise<'success' | 'timeout' | 'error'> => {
@@ -1204,7 +1289,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               type="number"
               value={sellAmount}
               onChange={(e) => setSellAmount(e.target.value)}
-              className="bg-transparent text-white text-2xl w-full outline-none"
+              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               placeholder="0"
             />
             {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
@@ -1226,7 +1311,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               type="number"
               value={buyAmount}
               onChange={(e) => setBuyAmount(e.target.value)}
-              className="bg-transparent text-white text-2xl w-full outline-none"
+              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               placeholder="0"
               readOnly
             />
@@ -1266,7 +1351,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               type="number"
               value={sellAmount}
               onChange={(e) => setSellAmount(e.target.value)}
-              className="bg-transparent text-white text-2xl w-full outline-none"
+              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               placeholder="0"
             />
             {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
@@ -1286,7 +1371,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               type="text"
               value={formatDisplayAmount(buyAmount, buyToken?.decimals || 6)}
               readOnly
-              className="bg-transparent text-white text-2xl w-full outline-none"
+              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               placeholder="0"
             />
             {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
@@ -1384,6 +1469,34 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [needsAllowance, setNeedsAllowance] = useState(false);
   const [allowanceTarget, setAllowanceTarget] = useState<string | null>(null);
 
+  // Update token fetching when chain changes
+  useEffect(() => {
+    const fetchTokens = async () => {
+      setIsLoadingTokens(true);
+      try {
+        if (activeChain === 'solana') {
+          console.log('Fetching Solana tokens...');
+          const solanaTokensList = await fetchSolanaTokens();
+          console.log('Fetched Solana tokens:', solanaTokensList.length);
+          setSolanaTokens(solanaTokensList);
+          setTokens(solanaTokensList); // Use the same tokens state for both chains
+        } else {
+          console.log('Fetching EVM tokens...');
+          const fetchedTokens = await fetchTokenList(chainId);
+          console.log('Fetched EVM tokens:', fetchedTokens.length);
+          setTokens(fetchedTokens);
+        }
+      } catch (error) {
+        console.error('Error fetching tokens:', error);
+        setError('Failed to fetch tokens');
+      } finally {
+        setIsLoadingTokens(false);
+      }
+    };
+
+    fetchTokens();
+  }, [chainId, activeChain]);
+
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
       <div className="w-full mb-4">
@@ -1407,10 +1520,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         </div>
         {isTokenSelectModalOpen && (
           <TokenSelectModal
-            tokens={availableTokens}
-            onClose={closeTokenSelectModal}
+            tokens={activeChain === 'solana' ? solanaTokens : tokens}
+            onClose={() => setIsTokenSelectModalOpen(false)}
             onSelect={handleTokenSelect}
-            chainId={chainId} // Pass chainId to modal
+            chainId={activeChain === 'solana' ? 'solana' : chainId}
+            activeChain={activeChain}
+            isLoading={isLoadingTokens}
+            setShowTokenSelect={setShowTokenSelect}
           />
         )}
       </div>
@@ -1425,6 +1541,17 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         slippage={DEFAULT_SLIPPAGE_BPS / 100}
         transactionSignature={transactionSignature}
       />
+      {showTokenSelect && (
+        <TokenSelectModal
+          tokens={tokens}
+          onClose={() => setShowTokenSelect(false)}
+          onSelect={handleTokenSelect}
+          chainId={chainId}
+          activeChain={activeChain}
+          isLoading={isLoadingTokens}
+          setShowTokenSelect={setShowTokenSelect}
+        />
+      )}
     </div>
   );
 }
@@ -1490,6 +1617,41 @@ const getSigner = async () => {
   return provider.getSigner();
 };
 
+const deserializeInstruction = (instruction: any) => {
+  if (!instruction || !instruction.programId || !instruction.accounts || !instruction.data) {
+    throw new Error('Invalid instruction format');
+  }
+  return {
+    programId: new PublicKey(instruction.programId),
+    keys: instruction.accounts.map((key: any) => ({
+      pubkey: new PublicKey(key.pubkey),
+      isSigner: key.isSigner,
+      isWritable: key.isWritable,
+    })),
+    data: Buffer.from(instruction.data, 'base64'),
+  };
+};
+
+const getAddressLookupTableAccounts = async (
+  connection: Connection,
+  keys: string[]
+): Promise<AddressLookupTableAccount[]> => {
+  const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
+    keys.map((key) => new PublicKey(key))
+  );
+
+  return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
+    const addressLookupTableAddress = keys[index];
+    if (accountInfo) {
+      const addressLookupTableAccount = new AddressLookupTableAccount({
+        key: new PublicKey(addressLookupTableAddress),
+        state: AddressLookupTableAccount.deserialize(accountInfo.data),
+      });
+      acc.push(addressLookupTableAccount);
+    }
+    return acc;
+  }, new Array<AddressLookupTableAccount>());
+};
 
 
 

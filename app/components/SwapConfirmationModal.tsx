@@ -1,18 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { SolanaModal } from './SolanaModal';
 
 interface SwapConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void>;
   sellAmount: string;
   buyAmount: string;
   sellToken: string;
   buyToken: string;
   slippage: number;
-  transactionSignature?: string;
+  transactionSignature: string | null;
+  isLoading?: boolean;
+  error?: string | null;
 }
 
-const SwapConfirmationModal: React.FC<SwapConfirmationModalProps> = ({
+export default function SwapConfirmationModal({
   isOpen,
   onClose,
   onConfirm,
@@ -21,41 +24,61 @@ const SwapConfirmationModal: React.FC<SwapConfirmationModalProps> = ({
   sellToken,
   buyToken,
   slippage,
-  transactionSignature
-}) => {
-  if (!isOpen) return null;
-
+  transactionSignature,
+  isLoading,
+  error
+}: SwapConfirmationModalProps) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-      <div className="bg-white p-6 rounded-lg">
+    <SolanaModal isOpen={isOpen} onClose={onClose}>
+      <div className="p-6">
         <h2 className="text-xl font-bold mb-4">Confirm Swap</h2>
-        <p>You are about to swap:</p>
-        <p className="font-bold">{sellAmount} {sellToken}</p>
-        <p>for approximately:</p>
-        <p className="font-bold">{buyAmount} {buyToken}</p>
-        <p className="mt-2">Slippage tolerance: {slippage}%</p>
-        {transactionSignature && (
-          <p className="mt-2 text-sm text-gray-500">
-            Transaction Signature: {transactionSignature}
-          </p>
-        )}
-        <div className="mt-4 flex justify-end">
-          <button
-            className="px-4 py-2 bg-gray-200 rounded mr-2"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            className="px-4 py-2 bg-blue-500 text-white rounded"
-            onClick={onConfirm}
-          >
-            Confirm Swap
-          </button>
+        
+        <div className="space-y-4">
+          <div>
+            <p>Selling: {sellAmount} {sellToken}</p>
+            <p>Buying: {buyAmount} {buyToken}</p>
+            <p>Slippage Tolerance: {slippage}%</p>
+          </div>
+
+          {error && (
+            <div className="text-red-500 p-2 rounded bg-red-100">
+              {error}
+            </div>
+          )}
+
+          {transactionSignature && (
+            <div className="text-green-500">
+              <p>Transaction successful!</p>
+              <a 
+                href={`https://solscan.io/tx/${transactionSignature}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:underline"
+              >
+                View on Solscan
+              </a>
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-4">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isLoading}
+              className={`px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 ${
+                isLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isLoading ? 'Confirming...' : 'Confirm Swap'}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </SolanaModal>
   );
-};
-
-export default SwapConfirmationModal;
+}

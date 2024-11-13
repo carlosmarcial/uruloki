@@ -1,40 +1,29 @@
-import React from 'react';
+import Image from 'next/image';
+import { useState } from 'react';
 
-interface TokenImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
-  src: string | null | undefined;
-  fallbackSrc?: string;
+interface TokenImageProps {
+  src?: string;
+  alt: string;
+  width: number;
+  height: number;
+  className?: string;
 }
 
-const TokenImage: React.FC<TokenImageProps> = ({ 
-  src, 
-  fallbackSrc = '/path/to/default-token-image.png', 
-  alt,
-  width = 24,
-  height = 24,
-  className = 'rounded-full',
-  ...props 
-}) => {
-  const [imgSrc, setImgSrc] = React.useState(src || fallbackSrc);
-
-  const handleError = () => {
-    if (imgSrc !== fallbackSrc) {
-      setImgSrc(fallbackSrc);
-    }
-  };
-
-  if (!src) {
-    return null;
-  }
+const TokenImage: React.FC<TokenImageProps> = ({ src, alt, width, height, className }) => {
+  const [error, setError] = useState(false);
+  
+  // Default token image URL (make sure this exists in your public folder)
+  const defaultTokenImage = '/default-token-image.svg';
 
   return (
-    <img
-      src={imgSrc}
+    <Image
+      src={error || !src ? defaultTokenImage : src}
       alt={alt}
-      onError={handleError}
       width={width}
       height={height}
       className={className}
-      {...props}
+      onError={() => setError(true)}
+      unoptimized // Add this if you're having issues with image optimization
     />
   );
 };

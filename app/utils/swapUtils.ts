@@ -7,41 +7,44 @@ export const fetchPrice = async (
   sellToken: string,
   buyToken: string,
   sellAmount: string,
-  taker: string,
-  slippageBps: string
+  takerAddress: string,
+  slippageBps: string = '50'
 ) => {
+  const apiVersion = ZEROX_API_VERSIONS[chainId] || 'v1';
+  const baseUrl = ZEROX_API_URLS[chainId];
+  
+  if (!baseUrl) {
+    throw new Error(`Unsupported chain ID: ${chainId}`);
+  }
+
+  const params = apiVersion === 'v2' ? {
+    chainId,
+    sellToken,
+    buyToken,
+    sellAmount,
+    taker: takerAddress,
+    swapFeeRecipient: process.env.NEXT_PUBLIC_FEE_RECIPIENT,
+    swapFeeBps: '100',
+    swapFeeToken: buyToken,
+    enableSlippageProtection: false
+  } : {
+    sellToken,
+    buyToken,
+    sellAmount,
+    takerAddress,
+    affiliateAddress: process.env.NEXT_PUBLIC_FEE_RECIPIENT,
+    affiliateFeeBasisPoints: '100',
+    skipValidation: false,
+    slippagePercentage: (Number(slippageBps) / 10000).toString()
+  };
+
   try {
-    const apiUrl = ZEROX_API_URLS[chainId];
-    const apiVersion = ZEROX_API_VERSIONS[chainId];
-    
-    if (!apiUrl) {
-      throw new Error(`Unsupported chain ID: ${chainId}`);
-    }
-
-    const headers = {
-      '0x-api-key': process.env.NEXT_PUBLIC_ZEROX_API_KEY || '',
-      ...(apiVersion === 'v2' ? { '0x-version': 'v2' } : {})
-    };
-
-    const params = apiVersion === 'v2' ? {
-      chainId,
-      sellToken,
-      buyToken,
-      sellAmount,
-      taker,
-      slippageBps
-    } : {
-      sellToken,
-      buyToken,
-      sellAmount,
-      takerAddress: taker
-    };
-
-    const endpoint = apiVersion === 'v2' ? '/swap/permit2/price' : '/swap/v1/price';
-    
-    const response = await axios.get(`${apiUrl}${endpoint}`, {
+    const endpoint = apiVersion === 'v2' ? '/swap/v1/price' : '/price';
+    const response = await axios.get(`${baseUrl}${endpoint}`, {
       params,
-      headers
+      headers: {
+        '0x-api-key': process.env.ZEROX_API_KEY || '',
+      }
     });
 
     return response.data;
@@ -56,80 +59,48 @@ export const fetchQuote = async (
   sellToken: string,
   buyToken: string,
   sellAmount: string,
-  taker: string,
-  slippageBps: string
+  takerAddress: string,
+  slippageBps: string = '50'
 ) => {
+  const apiVersion = ZEROX_API_VERSIONS[chainId] || 'v1';
+  const baseUrl = ZEROX_API_URLS[chainId];
+  
+  if (!baseUrl) {
+    throw new Error(`Unsupported chain ID: ${chainId}`);
+  }
+
+  const params = apiVersion === 'v2' ? {
+    chainId,
+    sellToken,
+    buyToken,
+    sellAmount,
+    taker: takerAddress,
+    swapFeeRecipient: process.env.NEXT_PUBLIC_FEE_RECIPIENT,
+    swapFeeBps: '100',
+    swapFeeToken: buyToken,
+    enableSlippageProtection: false
+  } : {
+    sellToken,
+    buyToken,
+    sellAmount,
+    takerAddress,
+    affiliateAddress: process.env.NEXT_PUBLIC_FEE_RECIPIENT,
+    affiliateFeeBasisPoints: '100',
+    skipValidation: false,
+    slippagePercentage: (Number(slippageBps) / 10000).toString()
+  };
+
   try {
-    const apiUrl = ZEROX_API_URLS[chainId];
-    const apiVersion = ZEROX_API_VERSIONS[chainId];
-    
-    if (!apiUrl) {
-      throw new Error(`Unsupported chain ID: ${chainId}`);
-    }
-
-    const sellAmountInBaseUnits = sellAmount.includes('.')
-      ? parseUnits(sellAmount, 6).toString()
-      : sellAmount + '000000';
-
-    console.log('Formatted sell amount:', sellAmountInBaseUnits);
-
-    const headers = {
-      '0x-api-key': process.env.NEXT_PUBLIC_ZEROX_API_KEY || '',
-      ...(apiVersion === 'v2' ? { '0x-version': 'v2' } : {})
-    };
-
-    let params;
-    if (apiVersion === 'v2') {
-      params = {
-        chainId,
-        sellToken,
-        buyToken,
-        sellAmount: sellAmountInBaseUnits,
-        taker,
-        slippageBps: '100'
-      };
-    } else {
-      params = {
-        sellToken,
-        buyToken,
-        sellAmount: sellAmountInBaseUnits,
-        takerAddress: taker,
-        skipValidation: true,
-        slippagePercentage: '0.01',
-        enableSlippageProtection: false,
-        feeRecipient: process.env.NEXT_PUBLIC_FEE_RECIPIENT,
-        buyTokenPercentageFee: '0.01'
-      };
-    }
-
-    const endpoint = apiVersion === 'v2' ? '/swap/permit2/quote' : '/swap/v1/quote';
-    
-    console.log('Fetching quote with:', {
-      url: `${apiUrl}${endpoint}`,
+    const response = await axios.get(`${baseUrl}/swap/v1/quote`, {
       params,
-      headers
+      headers: {
+        '0x-api-key': process.env.ZEROX_API_KEY || '',
+      }
     });
-
-    const response = await axios.get(`${apiUrl}${endpoint}`, {
-      params,
-      headers
-    });
-
-    console.log('Quote response:', response.data);
-
-    if (!response.data || !response.data.price) {
-      console.error('Invalid quote response:', response.data);
-      throw new Error('Invalid quote response structure');
-    }
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching quote:', error);
-    if (error.response) {
-      console.error('Error response data:', error.response.data);
-      console.error('Error response status:', error.response.status);
-      console.error('Error response headers:', error.response.headers);
-    }
     throw error;
   }
 }; 
