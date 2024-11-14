@@ -3,8 +3,36 @@ import { SOLANA_RPC_ENDPOINTS } from '../constants';
 import axios from 'axios';
 
 export function getConnection(commitment: Commitment = 'confirmed'): Connection {
-  return new Connection(SOLANA_RPC_ENDPOINTS.http, commitment);
+  return new Connection(SOLANA_RPC_ENDPOINTS.http, {
+    commitment,
+    wsEndpoint: SOLANA_RPC_ENDPOINTS.ws,
+    confirmTransactionInitialTimeout: 60000, // 60 seconds
+    fetch: customFetch // Add this if you want to implement custom fetch with retries
+  });
 }
+
+// Add this utility function for retrying fetch requests
+const customFetch = async (url: string, options: any) => {
+  const maxRetries = 3;
+  let lastError;
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response;
+    } catch (error) {
+      console.error(`Attempt ${i + 1} failed:`, error);
+      lastError = error;
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastError;
+};
 
 export function getWebSocketEndpoint(): string {
   return SOLANA_RPC_ENDPOINTS.ws;

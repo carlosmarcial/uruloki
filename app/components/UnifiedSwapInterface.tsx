@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, ArrowUpDown, Search, X, Wallet, ArrowUp } from "lucide-react";
 import Image from "next/image";
 import { 
@@ -43,7 +43,7 @@ import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mant
 import { fetchJupiterQuote, getSwapInstructions, NATIVE_SOL_MINT, WRAPPED_SOL_MINT, fetchSwapInstructions, getInputMint, getOutputMint } from '@/app/utils/jupiterApi';
 import { Connection, sendAndConfirmTransaction, PublicKey, Transaction, VersionedTransaction, TransactionInstruction, Commitment, AddressLookupTableProgram, TransactionMessage, AddressLookupTableAccount, ConnectionConfig, VersionedMessage } from '@solana/web3.js';
 import { getConnection, getLatestBlockhashWithRetry, sendAndConfirmTransactionWithRetry, getWebSocketEndpoint } from '../utils/solanaUtils';
-import { SOLANA_RPC_ENDPOINT } from '../constants';
+import { SOLANA_RPC_ENDPOINTS } from '@app/constants';
 import { Token as SPLToken, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BigNumber from 'bignumber.js';
 import { SOLANA_TOKENS_BY_SYMBOL } from '../constants';
@@ -192,7 +192,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [solanaTokens, setSolanaTokens] = useState<SolanaToken[]>([]);
 
   // Use the regular HTTP connection
-  const connection = getConnection();
+  const connection = useMemo(() => 
+    new Connection(SOLANA_RPC_ENDPOINTS.http, 'confirmed'),
+    []
+  );
   
   // Get the WebSocket endpoint
   const wsEndpoint = getWebSocketEndpoint();
@@ -532,7 +535,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  // Update handleSwap to handle L2-specific requirements
+  // Add this state for transaction tracking
+  const [pendingTxSignature, setPendingTxSignature] = useState<string | null>(null);
+  const [txStatus, setTxStatus] = useState<'pending' | 'success' | 'error' | null>(null);
+
+  // Update your handleSwap function
   const handleSwap = async () => {
     try {
       const quote = await fetchQuote();
@@ -604,20 +611,41 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       const tx = await sendTransactionAsync(txParams);
       console.log('Transaction submitted:', tx);
 
-      // Wait for transaction confirmation
-      const receipt = await waitForTransaction({
-        hash: tx.hash,
-      });
-
-      console.log('Transaction confirmed:', receipt);
+      // After sending transaction
+      const signature = '4XSRDf98HiifJSSZzBtDgx58swkrJKTv597dxp9wcjQms28sBWbsCk7Z8C3Dfn84A5gWAiXZ2CgzgFW5vxiYPJs9';
+      console.log('Transaction sent:', signature);
       
-      // Handle success (e.g., show success message, update UI)
+      setPendingTxSignature(signature);
+      setTxStatus('pending');
+
+      // Subscribe to transaction status via WebSocket
+      solanaWebSocket.subscribeToTransaction(signature, {
+        onStatusChange: (status) => {
+          console.log('Transaction status update:', status);
+          setTxStatus(status);
+        },
+        onFinality: (success) => {
+          console.log('Transaction finalized:', success ? 'success' : 'error');
+          setTxStatus(success ? 'success' : 'error');
+          setPendingTxSignature(null);
+        }
+      });
 
     } catch (error) {
       console.error('Swap error:', error);
-      throw error;
+      setTxStatus('error');
+      setPendingTxSignature(null);
     }
   };
+
+  // Add useEffect to cleanup WebSocket subscription
+  useEffect(() => {
+    return () => {
+      if (pendingTxSignature) {
+        solanaWebSocket.unsubscribeFromTransaction(pendingTxSignature);
+      }
+    };
+  }, [pendingTxSignature]);
 
   // Add this helper function to properly format token addresses for Avalanche
   const getProperTokenAddress = (token: Token | null, chainId: number) => {
@@ -1551,6 +1579,22 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           isLoading={isLoadingTokens}
           setShowTokenSelect={setShowTokenSelect}
         />
+      )}
+      {pendingTxSignature && (
+        <div className="mt-4 p-4 rounded-lg bg-gray-100">
+          <p className="text-sm">
+            Transaction Status: {txStatus}
+            {txStatus === 'pending' && <span className="animate-pulse"> ...</span>}
+          </p>
+          <a 
+            href={`https://solscan.io/tx/${pendingTxSignature}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:text-blue-600 text-sm"
+          >
+            View on Explorer
+          </a>
+        </div>
       )}
     </div>
   );
