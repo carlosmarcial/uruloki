@@ -242,10 +242,15 @@ export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
 export const JUPITER_QUOTE_API_URL = 'https://quote-api.jup.ag/v6/quote';
 export const JUPITER_SWAP_API_URL = 'https://quote-api.jup.ag/v6';
 export const JUPITER_SWAP_INSTRUCTIONS_API_URL = 'https://quote-api.jup.ag/v6/swap-instructions';
+
+const BASE_URL = process.env.NODE_ENV === 'development' 
+  ? 'http://localhost:3000'
+  : process.env.NEXT_PUBLIC_BASE_URL; // You'll need to add this to your env for production
+
 export const SOLANA_RPC_ENDPOINTS = {
-  http: process.env.NEXT_PUBLIC_SOLANA_RPC_HTTP || 'https://solana-mainnet.rpc.extrnode.com/2cec358b-e391-4b82-837c-9c661504501f',
-  ws: process.env.NEXT_PUBLIC_SOLANA_RPC_WS || 'wss://solana-mainnet.rpc.extrnode.com/2cec358b-e391-4b82-837c-9c661504501f'
-};
+  http: `${BASE_URL}/api/solana-rpc`,
+  ws: `${BASE_URL}/api/ws-auth`
+} as const;
 
 // Supported Chains
 export const SUPPORTED_CHAINS = [

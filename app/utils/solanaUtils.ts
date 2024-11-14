@@ -3,36 +3,32 @@ import { SOLANA_RPC_ENDPOINTS } from '../constants';
 import axios from 'axios';
 
 export function getConnection(commitment: Commitment = 'confirmed'): Connection {
-  return new Connection(SOLANA_RPC_ENDPOINTS.http, {
+  const rpcEndpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_BASE as string;
+  
+  return new Connection(rpcEndpoint, {
     commitment,
-    wsEndpoint: SOLANA_RPC_ENDPOINTS.ws,
-    confirmTransactionInitialTimeout: 60000, // 60 seconds
-    fetch: customFetch // Add this if you want to implement custom fetch with retries
+    fetch: async (url, options) => {
+      try {
+        const response = await fetch('/api/solana-rpc', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: options?.body,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return response;
+      } catch (error) {
+        console.error('RPC request failed:', error);
+        throw error;
+      }
+    },
   });
 }
-
-// Add this utility function for retrying fetch requests
-const customFetch = async (url: string, options: any) => {
-  const maxRetries = 3;
-  let lastError;
-
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetch(url, options);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      return response;
-    } catch (error) {
-      console.error(`Attempt ${i + 1} failed:`, error);
-      lastError = error;
-      if (i < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
-      }
-    }
-  }
-  throw lastError;
-};
 
 export function getWebSocketEndpoint(): string {
   return SOLANA_RPC_ENDPOINTS.ws;
@@ -57,33 +53,54 @@ export const getLatestBlockhashWithRetry = async (connection: Connection, maxRet
 export const sendAndConfirmTransactionWithRetry = async (
   connection: Connection,
   signedTransaction: VersionedTransaction,
-  maxRetries = 1,
+  maxRetries = 3,
   commitment: Commitment = 'confirmed'
 ): Promise<TransactionSignature> => {
   let retries = 0;
+  
   while (retries < maxRetries) {
     try {
       console.log(`Attempt ${retries + 1} to send and confirm transaction`);
       
+      // Send the transaction
       const rawTransaction = signedTransaction.serialize();
       const signature = await connection.sendRawTransaction(rawTransaction, {
         skipPreflight: true,
         maxRetries: 2,
       });
+      
       console.log(`Transaction sent with signature: ${signature}`);
 
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        lastValidBlockHeight: signedTransaction.message.lastValidBlockHeight,
-        blockhash: signedTransaction.message.recentBlockhash,
-      }, commitment);
+      // First try WebSocket confirmation
+      try {
+        const confirmation = await Promise.race([
+          connection.confirmTransaction({
+            signature,
+            lastValidBlockHeight: signedTransaction.message.lastValidBlockHeight,
+            blockhash: signedTransaction.message.recentBlockhash,
+          }, commitment),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('WebSocket timeout')), 15000)
+          )
+        ]);
 
-      if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
+        if (confirmation.value.err) {
+          throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
+        }
+
+        console.log(`Transaction confirmed via WebSocket: ${signature}`);
+        return signature;
+      } catch (wsError) {
+        console.warn('WebSocket confirmation failed, falling back to polling:', wsError);
+        
+        // Fallback to polling
+        const status = await pollTransactionStatus(connection, signature, 30);
+        if (status === 'success') {
+          console.log(`Transaction confirmed via polling: ${signature}`);
+          return signature;
+        }
+        throw new Error('Transaction failed or timed out');
       }
-
-      console.log(`Transaction confirmed: ${signature}`);
-      return signature;
     } catch (error) {
       console.error(`Error sending/confirming transaction (attempt ${retries + 1}):`, error);
       retries++;
@@ -93,6 +110,29 @@ export const sendAndConfirmTransactionWithRetry = async (
   }
   throw new Error('Failed to send and confirm transaction after max retries');
 };
+
+// Helper function to poll transaction status
+async function pollTransactionStatus(
+  connection: Connection,
+  signature: string,
+  timeoutSeconds: number
+): Promise<'success' | 'error' | 'timeout'> {
+  const start = Date.now();
+  
+  while (Date.now() - start < timeoutSeconds * 1000) {
+    try {
+      const status = await checkTransactionOnExplorer(signature);
+      if (status === 'success' || status === 'error') {
+        return status;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.warn('Error polling transaction status:', error);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  return 'timeout';
+}
 
 export const checkTransactionOnExplorer = async (signature: string): Promise<'success' | 'error' | 'pending'> => {
   const explorerUrl = `https://public-api.solscan.io/transaction/${signature}`;

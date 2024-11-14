@@ -191,11 +191,27 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [solanaTokens, setSolanaTokens] = useState<SolanaToken[]>([]);
 
-  // Use the regular HTTP connection
-  const connection = useMemo(() => 
-    new Connection(SOLANA_RPC_ENDPOINTS.http, 'confirmed'),
-    []
-  );
+  // Use the regular HTTP connection with custom fetch
+  const connection = useMemo(() => {
+    return new Connection(process.env.NEXT_PUBLIC_SOLANA_RPC_BASE as string, {
+      commitment: 'confirmed',
+      fetch: async (url, options) => {
+        try {
+          const response = await fetch('/api/solana-rpc', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: options?.body,
+          });
+          return response;
+        } catch (error) {
+          console.error('RPC request failed:', error);
+          throw error;
+        }
+      },
+    });
+  }, []);
   
   // Get the WebSocket endpoint
   const wsEndpoint = getWebSocketEndpoint();
@@ -1524,6 +1540,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
     fetchTokens();
   }, [chainId, activeChain]);
+
+  useEffect(() => {
+    // Initialize WebSocket connection
+    solanaWebSocket.connect();
+
+    // Cleanup on unmount
+    return () => {
+      // Add cleanup if needed
+    };
+  }, []);
 
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">

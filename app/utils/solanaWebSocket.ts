@@ -1,161 +1,164 @@
-import { SOLANA_RPC_ENDPOINTS } from '../constants';
+import { DrpcProvider } from '@drpcorg/drpc-sdk/dist/esm/providers/web3';
 
-interface TransactionCallback {
-  onStatusChange?: (status: 'pending' | 'success' | 'error') => void;
-  onFinality?: (success: boolean) => void;
-}
+type TransactionCallback = (data: any) => void;
 
-class SolanaWebSocket {
+export class SolanaWebSocket {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectInterval = 3000;
   private subscriptions: Map<string, TransactionCallback> = new Map();
   private nextSubscriptionId = 1;
+  private baseUrl: string;
 
-  connect() {
-    if (this.ws) {
-      this.ws.close();
-    }
+  constructor() {
+    this.baseUrl = process.env.NODE_ENV === 'development' 
+      ? 'http://localhost:3000'
+      : process.env.NEXT_PUBLIC_BASE_URL || '';
 
-    this.ws = new WebSocket(SOLANA_RPC_ENDPOINTS.ws);
-
-    this.ws.onopen = () => {
-      console.log('WebSocket connection opened');
-      this.reconnectAttempts = 0;
-      
-      // Resubscribe to all active transaction subscriptions
-      this.subscriptions.forEach((callback, signature) => {
-        this.subscribeToTransactionStatus(signature);
-      });
-    };
-
-    this.ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        this.handleWebSocketMessage(message);
-      } catch (error) {
-        console.error('Error handling WebSocket message:', error);
-      }
-    };
-
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    this.ws.onclose = () => {
-      console.log('WebSocket connection closed');
-      this.attemptReconnect();
-    };
+    // Bind methods to preserve 'this' context
+    this.handleMessage = this.handleMessage.bind(this);
+    this.connect = this.connect.bind(this);
+    this.resubscribeAll = this.resubscribeAll.bind(this);
+    this.attemptReconnect = this.attemptReconnect.bind(this);
   }
 
-  private handleWebSocketMessage(message: any) {
+  async connect() {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected');
+      return;
+    }
+
     try {
-      if (message.method === 'signatureNotification') {
-        const signature = message.params.result.value.signature;
-        const callback = this.subscriptions.get(signature);
-        
-        if (callback) {
-          if (message.params.result.value.err) {
-            callback.onStatusChange?.('error');
-            callback.onFinality?.(false);
-          } else {
-            callback.onStatusChange?.('success');
-            callback.onFinality?.(true);
-          }
-          
-          // Cleanup subscription after finality
-          this.unsubscribeFromTransaction(signature);
+      const response = await fetch(`${this.baseUrl}/api/ws-auth`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const { url } = await response.json();
+      if (!url) {
+        throw new Error('No WebSocket URL received');
+      }
+
+      this.ws = new WebSocket(url);
+      
+      this.ws.onopen = () => {
+        console.log('WebSocket connected successfully');
+        this.reconnectAttempts = 0;
+        this.resubscribeAll();
+      };
+
+      this.ws.onclose = (event) => {
+        console.log(`WebSocket closed with code: ${event.code}`);
+        if (!event.wasClean) {
+          this.attemptReconnect();
+        }
+      };
+
+      this.ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      this.ws.onmessage = this.handleMessage;
+
+    } catch (error) {
+      console.error('Failed to establish WebSocket connection:', error);
+      this.attemptReconnect();
+    }
+  }
+
+  private async attemptReconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+    
+    await new Promise(resolve => setTimeout(resolve, this.reconnectInterval));
+    await this.connect();
+  }
+
+  private handleMessage(event: MessageEvent) {
+    try {
+      const data = JSON.parse(event.data);
+      
+      // Handle subscription responses
+      if (data.method === 'subscription') {
+        const subscription = this.subscriptions.get(data.params.subscription);
+        if (subscription) {
+          subscription(data.params.result);
         }
       }
+      
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
     }
   }
 
-  subscribeToTransaction(signature: string, callbacks: TransactionCallback) {
-    this.subscriptions.set(signature, callbacks);
-    this.subscribeToTransactionStatus(signature);
-  }
-
-  private subscribeToTransactionStatus(signature: string) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      const subscriptionId = this.nextSubscriptionId++;
-      
-      // Subscribe to both confirmation and signature notifications
-      this.ws.send(JSON.stringify({
-        jsonrpc: '2.0',
-        id: subscriptionId,
-        method: 'signatureSubscribe',
-        params: [
-          signature,
-          {
-            commitment: 'confirmed',
-            enableReceivedNotification: true,
-            encoding: 'jsonParsed'
-          }
-        ]
-      }));
-
-      // Also subscribe to slot notifications to track network progress
-      this.ws.send(JSON.stringify({
-        jsonrpc: '2.0',
-        id: subscriptionId + 1,
-        method: 'slotSubscribe'
-      }));
+  private async resubscribeAll() {
+    try {
+      // Resubscribe to signature updates
+      for (const [id, callback] of this.subscriptions) {
+        await this.subscribeToSignature(id, callback);
+      }
+    } catch (error) {
+      console.error('Error resubscribing:', error);
     }
   }
 
-  unsubscribeFromTransaction(signature: string) {
-    this.subscriptions.delete(signature);
-    // Note: The WebSocket subscription will auto-close when the transaction is finalized
-  }
-
-  private attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-      setTimeout(() => this.connect(), this.reconnectInterval);
-    } else {
-      console.error('Max reconnect attempts reached. Please check your connection.');
+  async subscribeToSignature(signature: string, callback: TransactionCallback): Promise<string> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected');
     }
+
+    const subscriptionId = this.nextSubscriptionId++;
+    
+    // Subscribe to signature updates using dRPC WebSocket protocol
+    const subscribeMessage = {
+      jsonrpc: '2.0',
+      id: subscriptionId,
+      method: 'signatureSubscribe',
+      params: [
+        signature,
+        {
+          commitment: 'confirmed'
+        }
+      ]
+    };
+
+    this.ws.send(JSON.stringify(subscribeMessage));
+    this.subscriptions.set(subscriptionId.toString(), callback);
+    
+    return subscriptionId.toString();
   }
 
-  send(message: any) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    } else {
-      console.error('WebSocket is not connected. Message not sent:', message);
+  async unsubscribeFromSignature(subscriptionId: string): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected');
     }
+
+    const unsubscribeMessage = {
+      jsonrpc: '2.0',
+      id: parseInt(subscriptionId),
+      method: 'signatureUnsubscribe',
+      params: [parseInt(subscriptionId)]
+    };
+
+    this.ws.send(JSON.stringify(unsubscribeMessage));
+    this.subscriptions.delete(subscriptionId);
   }
 
-  close() {
+  disconnect() {
     if (this.ws) {
       this.ws.close();
+      this.ws = null;
     }
-  }
-
-  subscribe(subscription: any) {
-    const subStr = JSON.stringify(subscription);
-    this.subscriptions.add(subStr);
-    this.send(subscription);
-  }
-
-  unsubscribe(subscription: any) {
-    const subStr = JSON.stringify(subscription);
-    this.subscriptions.delete(subStr);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.send({
-        jsonrpc: '2.0',
-        id: subscription.id,
-        method: 'unsubscribe',
-        params: [subscription.params]
-      });
-    }
+    this.subscriptions.clear();
+    this.reconnectAttempts = 0;
   }
 }
 
+// Export a singleton instance
 export const solanaWebSocket = new SolanaWebSocket();
-
-// Initialize the WebSocket connection
-solanaWebSocket.connect();
