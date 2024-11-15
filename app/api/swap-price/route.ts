@@ -15,94 +15,92 @@ export async function GET(request: Request) {
     const sellAmount = searchParams.get('sellAmount');
     const takerAddress = searchParams.get('takerAddress');
     
+    // Validate required parameters
     if (!chainId || !sellToken || !buyToken || !sellAmount || !takerAddress) {
-      return NextResponse.json({ 
-        error: 'Missing required parameters' 
-      }, { status: 400 });
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
-    const apiVersion = ZEROX_API_VERSIONS[chainId];
-    const isV2 = apiVersion === 'v2';
+    const affiliateAddress = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
     
-    // V2 uses unified endpoint, V1 uses chain-specific endpoints
-    const baseUrl = isV2 
-      ? 'https://api.0x.org'
-      : `https://${chainId === 43114 ? 'avalanche' : 'optimism'}.api.0x.org`;
-      
-    const endpoint = isV2 
-      ? '/swap/permit2/quote'
-      : '/swap/v1/quote';
+    // Determine API version and base URL based on chain
+    let baseUrl;
+    let useV2 = false;
+    
+    switch (chainId) {
+      case 1: // Ethereum
+      case 137: // Polygon
+      case 10: // Optimism
+      case 42161: // Arbitrum
+        baseUrl = 'https://api.0x.org';
+        useV2 = true;
+        break;
+      case 43114: // Avalanche
+        baseUrl = 'https://avalanche.api.0x.org';
+        useV2 = false;
+        break;
+      default:
+        return NextResponse.json({ error: 'Unsupported chain ID' }, { status: 400 });
+    }
 
-    const params = isV2 ? {
-      // V2 parameters (Optimism)
-      chainId,
+    // Base parameters for both versions
+    const baseParams = {
       sellToken,
       buyToken,
-      
-      
+      sellAmount
+    };
+
+    // Version specific parameters
+    const versionParams = useV2 ? {
+      taker: takerAddress,
+      chainId: chainId.toString(),
+      swapFeeRecipient: affiliateAddress,
       swapFeeBps: '100',
-      swapFeeRecipient: FEE_RECIPIENT,
       swapFeeToken: buyToken,
-      slippageBps: '100',
-      intentOnFilling: true,
-      skipValidation: false
+      slippageBps: '100'
     } : {
-      // V1 parameters (Avalanche)
-      sellToken,
-      buyToken,
-      sellAmount,
       takerAddress,
-      feeRecipient: FEE_RECIPIENT,
+      affiliateAddress: affiliateAddress,
+      feeRecipient: affiliateAddress,
       buyTokenPercentageFee: '0.01',
+      feeRecipientTradeSurplus: affiliateAddress,
       slippagePercentage: '0.01'
     };
 
-    const headers = {
+    // Combine parameters
+    const params = new URLSearchParams({
+      ...baseParams,
+      ...versionParams
+    });
+
+    // Construct URL based on version
+    const apiUrl = useV2 ? 
+      `${baseUrl}/swap/permit2/quote` : 
+      `${baseUrl}/swap/v1/quote`;
+
+    const headers: Record<string, string> = {
       '0x-api-key': process.env.ZEROX_API_KEY || '',
-      'Accept': 'application/json',
-      ...(isV2 && { '0x-version': 'v2' })  // Add version header only for v2
+      'Accept': 'application/json'
     };
 
-    console.log('Sending request to 0x API:', {
-      url: `${baseUrl}${endpoint}`,
-      params,
-      headers
-    });
-
-    const response = await axios.get(`${baseUrl}${endpoint}`, {
-      params,
-      headers
-    });
-
-    // Update validation to handle both v1 and v2 responses
-    if (isV2 && !response.data?.transaction?.to) {
-      console.error('Invalid V2 response from 0x API:', response.data);
-      return NextResponse.json({ 
-        error: 'Invalid response from 0x API - missing transaction details' 
-      }, { status: 500 });
+    if (useV2) {
+      headers['0x-version'] = 'v2';
     }
 
-    // For V1 (Avalanche), validate different fields
-    if (!isV2 && (!response.data?.to || !response.data?.data)) {
-      console.error('Invalid V1 response from 0x API:', response.data);
-      return NextResponse.json({ 
-        error: 'Invalid response from 0x API - missing transaction details' 
-      }, { status: 500 });
-    }
-
-    // If using V1, transform the response to match V2 format
-    if (!isV2) {
-      const transformedResponse = {
+    const response = await axios.get(`${apiUrl}?${params}`, { headers });
+    
+    // For v1 (Avalanche), ensure transaction details are in the expected format
+    if (!useV2 && response.data) {
+      return NextResponse.json({
         ...response.data,
         transaction: {
           to: response.data.to,
+          from: response.data.from || takerAddress,
           data: response.data.data,
-          value: response.data.value,
+          value: response.data.value || '0',
           gas: response.data.gas,
           gasPrice: response.data.gasPrice
         }
-      };
-      return NextResponse.json(transformedResponse);
+      });
     }
 
     return NextResponse.json(response.data);
