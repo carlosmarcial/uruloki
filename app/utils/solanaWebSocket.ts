@@ -1,90 +1,80 @@
-import { DrpcProvider } from '@drpcorg/drpc-sdk/dist/esm/providers/web3';
-
 type TransactionCallback = (data: any) => void;
 
 export class SolanaWebSocket {
   private ws: WebSocket | null = null;
+  private backupWs: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectInterval = 3000;
   private subscriptions: Map<string, TransactionCallback> = new Map();
   private nextSubscriptionId = 1;
-  private baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.NODE_ENV === 'development' 
-      ? 'http://localhost:3000'
-      : process.env.NEXT_PUBLIC_BASE_URL || '';
-
-    // Bind methods to preserve 'this' context
+    // Bind methods
     this.handleMessage = this.handleMessage.bind(this);
     this.connect = this.connect.bind(this);
-    this.resubscribeAll = this.resubscribeAll.bind(this);
-    this.attemptReconnect = this.attemptReconnect.bind(this);
+    this.connectBackup = this.connectBackup.bind(this);
   }
 
   async connect() {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected');
-      return;
-    }
+    if (this.ws?.readyState === WebSocket.OPEN) return;
 
     try {
-      const response = await fetch(`${this.baseUrl}/api/ws-auth`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const response = await fetch('/api/ws-auth');
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
       const { url } = await response.json();
-      if (!url) {
-        throw new Error('No WebSocket URL received');
-      }
+      if (!url) throw new Error('No WebSocket URL received');
 
       this.ws = new WebSocket(url);
       
       this.ws.onopen = () => {
-        console.log('WebSocket connected successfully');
+        console.log('dRPC WebSocket connected');
         this.reconnectAttempts = 0;
         this.resubscribeAll();
       };
 
-      this.ws.onclose = (event) => {
-        console.log(`WebSocket closed with code: ${event.code}`);
-        if (!event.wasClean) {
-          this.attemptReconnect();
-        }
+      this.ws.onclose = () => {
+        console.log('dRPC WebSocket closed, trying backup');
+        this.connectBackup();
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('dRPC WebSocket error:', error);
+        this.connectBackup();
       };
 
       this.ws.onmessage = this.handleMessage;
 
     } catch (error) {
-      console.error('Failed to establish WebSocket connection:', error);
-      this.attemptReconnect();
+      console.error('Failed to connect to dRPC WebSocket:', error);
+      this.connectBackup();
     }
   }
 
-  private async attemptReconnect() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached');
-      return;
-    }
+  private async connectBackup() {
+    try {
+      const backupWsUrl = process.env.NEXT_PUBLIC_BACKUP_WS_URL;
+      if (!backupWsUrl) throw new Error('No backup WebSocket URL configured');
 
-    this.reconnectAttempts++;
-    console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-    
-    await new Promise(resolve => setTimeout(resolve, this.reconnectInterval));
-    await this.connect();
+      this.backupWs = new WebSocket(backupWsUrl);
+      
+      this.backupWs.onopen = () => {
+        console.log('Backup WebSocket connected');
+        this.resubscribeAll();
+      };
+
+      this.backupWs.onmessage = this.handleMessage;
+      
+    } catch (error) {
+      console.error('Failed to connect to backup WebSocket:', error);
+    }
   }
 
   private handleMessage(event: MessageEvent) {
     try {
       const data = JSON.parse(event.data);
       
-      // Handle subscription responses
       if (data.method === 'subscription') {
         const subscription = this.subscriptions.get(data.params.subscription);
         if (subscription) {
@@ -99,7 +89,6 @@ export class SolanaWebSocket {
 
   private async resubscribeAll() {
     try {
-      // Resubscribe to signature updates
       for (const [id, callback] of this.subscriptions) {
         await this.subscribeToSignature(id, callback);
       }
@@ -109,13 +98,14 @@ export class SolanaWebSocket {
   }
 
   async subscribeToSignature(signature: string, callback: TransactionCallback): Promise<string> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    const activeWs = this.ws?.readyState === WebSocket.OPEN ? this.ws : this.backupWs;
+    
+    if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket not connected');
     }
 
     const subscriptionId = this.nextSubscriptionId++;
     
-    // Subscribe to signature updates using dRPC WebSocket protocol
     const subscribeMessage = {
       jsonrpc: '2.0',
       id: subscriptionId,
@@ -128,14 +118,16 @@ export class SolanaWebSocket {
       ]
     };
 
-    this.ws.send(JSON.stringify(subscribeMessage));
+    activeWs.send(JSON.stringify(subscribeMessage));
     this.subscriptions.set(subscriptionId.toString(), callback);
     
     return subscriptionId.toString();
   }
 
   async unsubscribeFromSignature(subscriptionId: string): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    const activeWs = this.ws?.readyState === WebSocket.OPEN ? this.ws : this.backupWs;
+    
+    if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket not connected');
     }
 
@@ -146,7 +138,7 @@ export class SolanaWebSocket {
       params: [parseInt(subscriptionId)]
     };
 
-    this.ws.send(JSON.stringify(unsubscribeMessage));
+    activeWs.send(JSON.stringify(unsubscribeMessage));
     this.subscriptions.delete(subscriptionId);
   }
 
@@ -155,10 +147,13 @@ export class SolanaWebSocket {
       this.ws.close();
       this.ws = null;
     }
+    if (this.backupWs) {
+      this.backupWs.close();
+      this.backupWs = null;
+    }
     this.subscriptions.clear();
     this.reconnectAttempts = 0;
   }
 }
 
-// Export a singleton instance
 export const solanaWebSocket = new SolanaWebSocket();

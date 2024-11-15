@@ -976,12 +976,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const handleConfirmSwap = async () => {
     try {
-      if (!sellToken || !buyToken || !sellAmount) {
+      if (!sellToken || !buyToken || !sellAmount || !solanaWallet.publicKey) {
         throw new Error('Missing required swap parameters');
       }
 
+      setSwapStatus('loading');
+      setSwapError(null);
+
       // Convert sell amount to proper units based on decimals
-      const amountInBaseUnits = (Number(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
+      const amountInBaseUnits = Math.floor(Number(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
 
       console.log('Fetching quote with params:', {
         inputMint: sellToken.address,
@@ -993,8 +996,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       const quoteResponse = await fetchJupiterQuote({
         inputMint: sellToken.address,
         outputMint: buyToken.address,
-        amount: amountInBaseUnits,
-        slippageBps: '50'
+        amount: Number(amountInBaseUnits),
+        slippageBps: slippageTolerance,
+        restrictIntermediateTokens: true,
+        maxAccounts: 64
       });
 
       if (!quoteResponse) {
@@ -1009,8 +1014,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
       // Handle success
       setSwapStatus('success');
-      setSwapTxSignature(signature);
-      onClose(); // Close the confirmation modal
+      setTransactionSignature(signature);
+      setIsConfirmationModalOpen(false);
 
     } catch (error) {
       console.error('Swap execution failed:', error);
@@ -1024,42 +1029,24 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const executeSolanaSwap = async (quoteResponse: any) => {
     try {
-      // Validate required parameters
+      // Validate wallet connection
       if (!solanaWallet || !solanaWallet.publicKey) {
         throw new Error('Wallet not connected');
       }
 
-      if (!quoteResponse) {
-        throw new Error('Missing quote response');
-      }
-
-      // Check wallet and balance
-      checkWalletReady();
-      await checkBalance(solanaWallet);
-
-      // Get a fresh quote with fixed 3% slippage
-      const freshQuote = await fetchJupiterQuote({
-        inputMint: quoteResponse.inputMint,
-        outputMint: quoteResponse.outputMint,
-        amount: Number(quoteResponse.inAmount),
-        slippageBps: 300, // Fixed 3% slippage
-        maxAccounts: 64
-      });
-
-      // Get latest blockhash before creating swap instructions
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
-
-      // Get swap instructions from Jupiter API
+      // Get swap instructions with optimized settings
       const swapResponse = await fetchJupiterSwapInstructions({
         swapRequest: {
-          quoteResponse: freshQuote,
+          quoteResponse,
           userPublicKey: solanaWallet.publicKey.toString(),
           wrapUnwrapSOL: true,
-          computeUnitPriceMicroLamports: null,
-          asLegacyTransaction: false,
-          slippageBps: 300, // Fixed 3% slippage
-          dynamicComputeUnitLimit: true,
-          prioritizationFeeLamports: "auto"
+          slippageBps: slippageTolerance,
+          prioritizationFeeLamports: {
+            priorityLevelWithMaxLamports: {
+              maxLamports: 10000000,
+              priorityLevel: "veryHigh"
+            }
+          }
         }
       });
 
@@ -1067,152 +1054,88 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         throw new Error('Failed to get swap transaction');
       }
 
-      console.log('Received swap response:', swapResponse);
-
-      // Decode the serialized transaction
+      // Decode and sign transaction
       const swapTransactionBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
       const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
 
-      // Update the transaction with fresh blockhash
+      // Get fresh blockhash
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
       transaction.message.recentBlockhash = blockhash;
 
-      // Sign the transaction
       if (!solanaWallet.signTransaction) {
         throw new Error('Wallet does not support transaction signing');
       }
 
       const signedTransaction = await solanaWallet.signTransaction(transaction);
 
-      // Send transaction with retries
-      const signature = await retry(
-        async () => {
-          const rawTransaction = signedTransaction.serialize();
-          return await connection.sendRawTransaction(rawTransaction, {
-            skipPreflight: true,
-            maxRetries: 3,
-            preflightCommitment: 'processed',
-            minContextSlot: swapResponse.contextSlot,
-            computeUnits: swapResponse.computeUnitLimit,
-            prioritizationFee: swapResponse.prioritizationFeeLamports
-          });
-        },
-        {
-          retries: 5,
-          minTimeout: 250,
-          maxTimeout: 1000,
+      // Submit transaction using Jupiter's endpoint for better success rate
+      const transactionBase64 = Buffer.from(signedTransaction.serialize()).toString('base64');
+
+      // First try Jupiter's worker
+      try {
+        const response = await fetch('https://worker.jup.ag/v6/send-transaction', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            transaction: transactionBase64,
+            options: {
+              skipPreflight: true,
+              maxRetries: 3,
+              preflightCommitment: 'processed'
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Jupiter worker error: ${response.status}`);
         }
-      );
 
-      console.log('Transaction sent:', signature);
+        const { signature } = await response.json();
+        console.log('Transaction submitted via Jupiter worker:', signature);
 
-      // Wait for transaction to be visible on the network
-      await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for confirmation
+        const status = await connection.confirmTransaction({
+          signature,
+          blockhash,
+          lastValidBlockHeight
+        }, 'confirmed');
 
-      // Enhanced confirmation handling with more retries
-      const confirmationResult = await retry(
-        async () => {
-          try {
-            // First check transaction status with retries
-            const statusCheckResult = await retry(
-              async () => {
-                const status = await connection.getSignatureStatus(signature, {
-                  searchTransactionHistory: true
-                });
-
-                if (!status?.value) {
-                  throw new Error('Status not found, retrying...');
-                }
-
-                return status;
-              },
-              {
-                retries: 15,
-                minTimeout: 2000,
-                maxTimeout: 4000,
-              }
-            );
-
-            if (statusCheckResult.value.err) {
-              console.error('Transaction error:', statusCheckResult.value.err);
-              throw new Error(`Transaction failed: ${JSON.stringify(statusCheckResult.value.err)}`);
-            }
-
-            // Get latest blockhash for confirmation
-            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-
-            // Confirm transaction with new blockhash
-            const confirmation = await connection.confirmTransaction({
-              signature,
-              blockhash,
-              lastValidBlockHeight
-            }, 'confirmed');
-
-            if (confirmation.value.err) {
-              throw new Error(`Transaction confirmation failed: ${confirmation.value.err}`);
-            }
-
-            // Additional verification with retries
-            const txInfo = await retry(
-              async () => {
-                const info = await connection.getTransaction(signature, {
-                  maxSupportedTransactionVersion: 0,
-                  commitment: 'confirmed'
-                });
-
-                if (!info) {
-                  throw new Error('Transaction info not found, retrying...');
-                }
-
-                return info;
-              },
-              {
-                retries: 10,
-                minTimeout: 1000,
-                maxTimeout: 2000,
-              }
-            );
-
-            // Check if transaction was successful
-            if (txInfo.meta?.err) {
-              throw new Error(`Transaction metadata shows error: ${JSON.stringify(txInfo.meta.err)}`);
-            }
-
-            return { statusCheckResult, confirmation, txInfo };
-          } catch (error) {
-            console.error('Confirmation error:', error);
-            throw error;
-          }
-        },
-        {
-          retries: 10,
-          minTimeout: 2000,
-          maxTimeout: 4000,
+        if (status.value.err) {
+          throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
         }
-      );
 
-      // If we get here, the transaction was successful
-      console.log('Swap executed successfully:', signature);
-      setTransactionSignature(signature);
-      setSwapStatus('success');
+        return signature;
 
-      // Update UI with success message
-      if (confirmationResult.txInfo?.meta) {
-        const postTokenBalances = confirmationResult.txInfo.meta.postTokenBalances;
-        console.log('Post-swap token balances:', postTokenBalances);
+      } catch (jupiterError) {
+        console.warn('Jupiter worker failed, falling back to direct RPC:', jupiterError);
+
+        // Fallback to direct RPC submission
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
+          skipPreflight: true,
+          maxRetries: 3,
+          preflightCommitment: 'processed'
+        });
+
+        console.log('Transaction submitted via direct RPC:', signature);
+
+        // Wait for confirmation
+        const status = await connection.confirmTransaction({
+          signature,
+          blockhash,
+          lastValidBlockHeight
+        }, 'confirmed');
+
+        if (status.value.err) {
+          throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+        }
+
+        return signature;
       }
-
-      return signature;
 
     } catch (error) {
-      console.error('Solana Swap Execution', error);
-      setSwapStatus('error');
-      if (error instanceof Error) {
-        setSwapError(error.message);
-        if ('getLogs' in error) {
-          const logs = await (error as any).getLogs?.();
-          console.error('Transaction logs:', logs);
-        }
-      }
+      console.error('Swap execution failed:', error);
       throw error;
     }
   };

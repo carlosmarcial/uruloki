@@ -103,4 +103,60 @@ export const fetchQuote = async (
     console.error('Error fetching quote:', error);
     throw error;
   }
+};
+
+export const sendTransactionWithRetry = async (
+  connection: Connection,
+  transaction: VersionedTransaction,
+  wallet: WalletContextState,
+  maxRetries = 3
+) => {
+  let lastError;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      // Get fresh blockhash each attempt
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      transaction.message.recentBlockhash = blockhash;
+
+      const signedTransaction = await wallet.signTransaction(transaction);
+
+      // Submit via Jupiter worker
+      const response = await fetch('https://worker.jup.ag/send-transaction', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          transaction: signedTransaction.serialize().toString('base64'),
+          options: {
+            skipPreflight: true,
+            maxRetries: 2,
+            preflightCommitment: 'processed'
+          }
+        })
+      });
+
+      const { signature } = await response.json();
+
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight
+      }, 'confirmed');
+
+      if (!confirmation.value.err) {
+        return signature;
+      }
+
+      lastError = new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+    } catch (error) {
+      lastError = error;
+      console.error(`Attempt ${i + 1} failed:`, error);
+      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+    }
+  }
+
+  throw lastError;
 }; 
