@@ -8,13 +8,18 @@ import {
   WRAPPED_SOL_MINT
 } from '../constants';
 
-export const getInputMint = (tokenAddress: string) => {
-  return tokenAddress === NATIVE_SOL_MINT ? WRAPPED_SOL_MINT : tokenAddress;
+// Helper function to normalize mint addresses for Jupiter API
+const normalizeMint = (mintAddress: string) => {
+  // If it's native SOL address, convert to wrapped SOL mint
+  if (mintAddress === '11111111111111111111111111111111' || 
+      mintAddress === NATIVE_SOL_MINT) {
+    return WRAPPED_SOL_MINT;
+  }
+  return mintAddress;
 };
 
-export const getOutputMint = (tokenAddress: string) => {
-  return tokenAddress === NATIVE_SOL_MINT ? WRAPPED_SOL_MINT : tokenAddress;
-};
+export const getInputMint = (tokenAddress: string) => normalizeMint(tokenAddress);
+export const getOutputMint = (tokenAddress: string) => normalizeMint(tokenAddress);
 
 interface JupiterQuoteResponse {
   inputMint: string;
@@ -31,54 +36,38 @@ interface JupiterQuoteResponse {
   timeTaken?: number;
 }
 
-export const fetchJupiterQuote = async ({
-  inputMint,
-  outputMint,
-  amount,
-  slippageBps = 50,
-  maxAccounts = 64
-}: {
+export const fetchJupiterQuote = async (params: {
   inputMint: string;
   outputMint: string;
-  amount: number;
+  amount: string;
   slippageBps?: number;
   maxAccounts?: number;
 }) => {
   try {
-    const url = new URL(JUPITER_QUOTE_API_URL);
-    
-    // Add query parameters
-    const params = {
-      inputMint,
-      outputMint,
-      amount: Math.round(amount).toString(),
-      slippageBps: slippageBps.toString(),
-      maxAccounts: maxAccounts.toString()
-    };
-    
-    Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.append(key, value);
+    // Normalize input and output mints
+    const normalizedInputMint = normalizeMint(params.inputMint);
+    const normalizedOutputMint = normalizeMint(params.outputMint);
+
+    const searchParams = new URLSearchParams({
+      inputMint: normalizedInputMint,
+      outputMint: normalizedOutputMint,
+      amount: params.amount,
+      slippageBps: (params.slippageBps || 300).toString(),
+      maxAccounts: (params.maxAccounts || 64).toString()
     });
 
-    console.log('Fetching Jupiter quote with URL:', url.toString());
+    const url = `${JUPITER_QUOTE_API_URL}?${searchParams.toString()}`;
+    console.log('Fetching Jupiter quote with URL:', url);
 
-    const response = await fetch(url.toString());
-    
+    const response = await fetch(url);
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Jupiter quote API error: ${response.status}, ${errorText}`);
+      const errorData = await response.json();
+      throw new Error(`Jupiter quote API error: ${response.status}, ${JSON.stringify(errorData)}`);
     }
 
-    const data = await response.json();
-    
-    if (!data || !data.outAmount) {
-      console.error('Invalid quote response:', data);
-      throw new Error('Invalid quote format received');
-    }
-
-    return data;
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching Jupiter quote:', error);
+    console.error('\n Error fetching Jupiter quote:', error);
     throw error;
   }
 };

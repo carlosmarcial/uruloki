@@ -189,7 +189,7 @@ export const AVALANCHE_TOKENS: Token[] = [
 
 export const SOLANA_TOKENS: SolanaToken[] = [
   {
-    address: 'So11111111111111111111111111111111111111112',
+    address: '11111111111111111111111111111111',
     symbol: 'SOL',
     name: 'Solana',
     decimals: 9,
@@ -237,7 +237,7 @@ export const SOLANA_TOKENS_BY_ADDRESS = SOLANA_TOKENS.reduce((acc, token) => {
 }, {} as { [address: string]: SolanaToken });
 
 // Solana Specific Constants
-export const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const NATIVE_SOL_MINT = '11111111111111111111111111111111';
 export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
 export const JUPITER_QUOTE_API_URL = 'https://quote-api.jup.ag/v6/quote';
 export const JUPITER_SWAP_API_URL = 'https://quote-api.jup.ag/v6';
