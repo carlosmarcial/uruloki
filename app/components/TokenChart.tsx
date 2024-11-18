@@ -258,7 +258,17 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         },
         volume: {
           current24h: `$${Number(poolDetails.volume_usd?.h24 || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-          change24h: `${((Number(poolDetails.volume_usd?.h24 || 0) - Number(poolDetails.volume_usd?.h6 || 0)) / Number(poolDetails.volume_usd?.h6 || 1) * 100).toFixed(2)}%`,
+          change24h: (() => {
+            const volume24h = Number(poolDetails.volume_usd?.h24 || 0);
+            const volume6h = Number(poolDetails.volume_usd?.h6 || 0);
+            // Normalize 6h volume to 24h equivalent for fair comparison
+            const normalized6hVolume = volume6h * 4; // multiply by 4 to get 24h equivalent
+            
+            if (normalized6hVolume === 0) return '0.00%';
+            
+            const percentageChange = ((volume24h - normalized6hVolume) / normalized6hVolume * 100);
+            return `${percentageChange.toFixed(2)}%`;
+          })(),
           breakdown: {
             last1h: `$${Number(poolDetails.volume_usd?.h1 || 0).toLocaleString('en-US')}`,
             last6h: `$${Number(poolDetails.volume_usd?.h6 || 0).toLocaleString('en-US')}`,
@@ -306,6 +316,13 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
           type: poolDetails.type || 'Standard'
         }
       };
+
+      console.log('Volume data:', {
+        volume24h: poolDetails.volume_usd?.h24,
+        volume6h: poolDetails.volume_usd?.h6,
+        volume1h: poolDetails.volume_usd?.h1,
+        calculatedChange: marketData.volume.change24h
+      });
 
       console.log('Market data being sent to API:', JSON.stringify(marketData.technical, null, 2));
 
