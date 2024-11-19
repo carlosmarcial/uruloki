@@ -1,32 +1,46 @@
 import React from 'react';
 import { SolanaModal } from './SolanaModal';
-import { DEFAULT_SLIPPAGE_BPS } from '@/app/constants';
-import { XCircle, CheckCircle, Loader2 } from 'lucide-react'; // Add Loader2 for pending state
+import { XCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { formatUnits } from 'viem';
+import { ETH_DEFAULT_SLIPPAGE_PERCENTAGE } from '@/app/constants';
 
-interface SwapConfirmationModalProps {
+interface EthereumConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
   sellAmount: string;
   buyAmount: string;
-  sellToken: string;
-  buyToken: string;
+  sellToken: any;
+  buyToken: any;
   slippage?: number;
-  transactionSignature: string | null;
+  transactionHash: string | null;
   isLoading?: boolean;
   error?: string | null;
   containerRef?: React.RefObject<HTMLDivElement>;
   transactionStatus?: 'idle' | 'pending' | 'success' | 'rejected' | 'error';
+  estimatedGas?: bigint;
+  gasPrice?: bigint;
+  chainId: number;
 }
 
-// Helper function to format numbers with commas
 const formatNumberWithCommas = (value: string) => {
   const [wholePart, decimalPart] = value.split('.');
   const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return decimalPart ? `${formattedWholePart}.${decimalPart}` : formattedWholePart;
 };
 
-export default function SwapConfirmationModal({
+const getExplorerUrl = (chainId: number, hash: string) => {
+  const explorers: { [key: number]: string } = {
+    1: 'https://etherscan.io',
+    137: 'https://polygonscan.com',
+    42161: 'https://arbiscan.io',
+    10: 'https://optimistic.etherscan.io',
+    43114: 'https://snowtrace.io'
+  };
+  return `${explorers[chainId] || explorers[1]}/tx/${hash}`;
+};
+
+export default function EthereumConfirmationModal({
   isOpen,
   onClose,
   onConfirm,
@@ -34,20 +48,23 @@ export default function SwapConfirmationModal({
   buyAmount,
   sellToken,
   buyToken,
-  slippage = DEFAULT_SLIPPAGE_BPS / 100,
-  transactionSignature,
+  slippage = ETH_DEFAULT_SLIPPAGE_PERCENTAGE,
+  transactionHash,
   isLoading,
   error,
   containerRef,
-  transactionStatus = 'idle'
-}: SwapConfirmationModalProps) {
+  transactionStatus = 'idle',
+  estimatedGas,
+  gasPrice,
+  chainId
+}: EthereumConfirmationModalProps) {
   
   const renderTransactionStatus = () => {
     switch (transactionStatus) {
       case 'pending':
         return (
-          <div className="bg-purple-900/50 border border-purple-500 text-purple-200 p-4 rounded-lg flex items-center space-x-3">
-            <Loader2 className="h-6 w-6 text-purple-500 animate-spin" />
+          <div className="bg-[#77be44]/20 border border-[#77be44] text-[#77be44] p-4 rounded-lg flex items-center space-x-3">
+            <Loader2 className="h-6 w-6 text-[#77be44] animate-spin" />
             <div>
               <p className="font-semibold">Transaction Pending</p>
               <p className="text-sm opacity-80">Waiting for confirmation...</p>
@@ -73,26 +90,39 @@ export default function SwapConfirmationModal({
         );
       case 'success':
         return (
-          <div className="bg-green-900/50 border border-green-500 text-green-200 p-4 rounded-lg flex items-center space-x-3">
-            <CheckCircle className="h-6 w-6 text-green-500" />
-            <div>
-              <p className="font-semibold mb-2">Transaction Successful!</p>
-              {transactionSignature && (
-                <a 
-                  href={`https://solscan.io/tx/${transactionSignature}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300 underline text-sm"
-                >
-                  View on Solscan ↗
-                </a>
-              )}
-            </div>
+          <div className="bg-green-900/50 border border-green-500 text-green-200 p-4 rounded-lg">
+            <p className="font-semibold mb-2">Transaction Successful!</p>
+            {transactionHash && (
+              <a 
+                href={getExplorerUrl(chainId, transactionHash)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 underline text-sm"
+              >
+                View on Explorer ↗
+              </a>
+            )}
           </div>
         );
       default:
         return null;
     }
+  };
+
+  const renderGasEstimate = () => {
+    if (!estimatedGas || !gasPrice) return null;
+
+    const gasCost = (estimatedGas * gasPrice);
+    const gasCostEth = formatUnits(gasCost, 18);
+
+    return (
+      <div className="bg-gray-800 rounded-lg p-4">
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400">Estimated Gas Fee</span>
+          <span className="text-white">{Number(gasCostEth).toFixed(6)} ETH</span>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -101,23 +131,27 @@ export default function SwapConfirmationModal({
       onClose={onClose}
       containerRef={containerRef}
     >
-      <div className="h-full flex flex-col">
-        <h2 className="text-xl font-bold mb-6 text-white pt-2">Confirm Swap</h2>
+      <div className="flex flex-col h-full">
+        <div className="flex-none">
+          <h2 className="text-xl font-bold mb-6 text-white pt-2">Confirm Swap</h2>
+        </div>
         
-        <div className="flex-1 space-y-4">
+        <div className="space-y-4">
           <div className="bg-gray-800 rounded-lg p-4">
             <p className="text-gray-400 text-sm mb-1">You Receive</p>
             <p className="text-white text-lg font-semibold">
-              {formatNumberWithCommas(buyAmount)} {buyToken}
+              {formatNumberWithCommas(buyAmount)} {buyToken?.symbol}
             </p>
           </div>
 
           <div className="bg-gray-800 rounded-lg p-4">
             <p className="text-gray-400 text-sm mb-1">You Pay</p>
             <p className="text-white text-lg font-semibold">
-              {formatNumberWithCommas(sellAmount)} {sellToken}
+              {formatNumberWithCommas(sellAmount)} {sellToken?.symbol}
             </p>
           </div>
+
+          {renderGasEstimate()}
 
           <div className="bg-gray-800 rounded-lg p-4">
             <div className="flex justify-between items-center mb-2">
@@ -126,7 +160,7 @@ export default function SwapConfirmationModal({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Network</span>
-              <span className="text-white">Solana</span>
+              <span className="text-white">Ethereum</span>
             </div>
           </div>
 
@@ -138,24 +172,24 @@ export default function SwapConfirmationModal({
             <button
               onClick={onClose}
               className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              disabled={transactionStatus === 'pending'}
+              disabled={isLoading}
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
-              disabled={isLoading || transactionStatus === 'pending' || transactionStatus === 'rejected'}
-              className={`flex-1 px-4 py-3 bg-purple-500 text-white rounded-lg
-                ${(isLoading || transactionStatus === 'pending' || transactionStatus === 'rejected')
+              disabled={isLoading || transactionStatus === 'rejected'}
+              className={`flex-1 px-4 py-3 bg-[#77be44] text-white rounded-lg
+                ${(isLoading || transactionStatus === 'rejected')
                   ? 'opacity-50 cursor-not-allowed' 
-                  : 'hover:bg-purple-600 transition-colors'
+                  : 'hover:bg-[#69aa3b] transition-colors'
                 }`}
             >
-              {transactionStatus === 'pending' ? 'Confirming...' : 'Confirm Swap'}
+              {isLoading ? 'Confirming...' : 'Confirm Swap'}
             </button>
           </div>
         </div>
       </div>
     </SolanaModal>
   );
-}
+} 

@@ -25,6 +25,9 @@ interface TokenAnalysis {
   error: string | null;
 }
 
+const WRAPPED_SOL_ADDRESS = 'So11111111111111111111111111111111111111112';
+const NATIVE_SOL_ADDRESS = '11111111111111111111111111111111';
+
 const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, chainId }, ref) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,11 +67,14 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
       return 'eth';
     }
     
-    // For Solana tokens, we need to handle the address format differently
+    // For Solana tokens, handle special cases
     if (network === 'solana') {
+      // If it's native SOL, use Wrapped SOL address
+      if (address === NATIVE_SOL_ADDRESS) {
+        return WRAPPED_SOL_ADDRESS;
+      }
       // Remove any potential 'spl-' prefix
       const cleanAddress = address.replace('spl-', '');
-      // Return the clean address without modification
       return cleanAddress;
     }
     
@@ -90,8 +96,14 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         return `https://www.geckoterminal.com/eth/pools/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
       }
 
-      // For Solana tokens, first try to get token info
+      // For Solana tokens
       if (network === 'solana') {
+        // Special handling for SOL token
+        if (token.address === NATIVE_SOL_ADDRESS || token.symbol.toUpperCase() === 'SOL') {
+          // Use a known liquid Wrapped SOL pool
+          return `https://www.geckoterminal.com/solana/pools/${WRAPPED_SOL_ADDRESS}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
+        }
+
         try {
           // First try to get token pools
           const tokenResponse = await axios.get(

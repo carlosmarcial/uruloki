@@ -1,43 +1,33 @@
 "use client";
 
-import { useState } from 'react';
-import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
+import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import '@rainbow-me/rainbowkit/styles.css';
-import { WagmiProvider } from 'wagmi';
-import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll } from 'wagmi/chains';
+import { WagmiConfig } from 'wagmi';
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import ModelPreloader from '@app/components/ModelPreloader';
 import SolanaProvider from './components/SolanaProvider';
+import { wagmiConfig } from './wagmi';
 
-// Ensure you have this type for the environment variable
-declare global {
-  namespace NodeJS {
-    interface ProcessEnv {
-      NEXT_PUBLIC_REOWN_PROJECT_ID: string;
-    }
-  }
-}
-
-const config = getDefaultConfig({
-  appName: 'Uruloki',
-  projectId: process.env.NEXT_PUBLIC_REOWN_PROJECT_ID,
-  chains: [mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll],
-  ssr: true, // Enable server-side rendering mode
-});
+const queryClient = new QueryClient();
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
-
   return (
-    <WagmiProvider config={config}>
+    <WagmiConfig config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider chains={config.chains}>
+        <RainbowKitProvider 
+          theme={darkTheme({
+            accentColor: '#77be44',
+            accentColorForeground: 'white',
+            borderRadius: 'small'
+          })}
+          modalSize="compact"
+        >
           <SolanaProvider>
             <ModelPreloader />
             {children}
           </SolanaProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
-    </WagmiProvider>
+    </WagmiConfig>
   );
 }

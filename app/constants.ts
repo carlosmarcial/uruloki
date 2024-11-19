@@ -19,7 +19,7 @@ export const MAGIC_CALLDATA_STRING = "f".repeat(130);
 export const MAX_ALLOWANCE = BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935");
 export const GAS_LIMIT_BUFFER = 1.1;
 export const DEFAULT_DEADLINE = Math.floor(Date.now() / 1000) + 20 * 60;
-export const DEFAULT_SLIPPAGE_BPS = 50;
+export const DEFAULT_SLIPPAGE_BPS = 300;
 
 // Fee Related Constants
 export const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
@@ -80,6 +80,7 @@ export const ETH_MIN_SLIPPAGE_PERCENTAGE = 0.1;
 export const ETH_MAX_SLIPPAGE_PERCENTAGE = 50;
 export const SOLANA_MIN_SLIPPAGE_BPS = 10;
 export const SOLANA_MAX_SLIPPAGE_BPS = 5000;
+export const SOLANA_DEFAULT_SLIPPAGE_BPS = 300;
 
 // Interfaces
 export interface Token {

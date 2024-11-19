@@ -77,6 +77,9 @@ import { fetchOptimismTokens } from '../utils/optimismUtils';
 import { ARBITRUM_CHAIN_ID, POLYGON_CHAIN_ID, OPTIMISM_CHAIN_ID, ETHEREUM_CHAIN_ID } from '@app/constants';
 import { fetchAvalancheTokens } from '../utils/avalancheUtils';
 import { fetchSolanaTokens } from '../utils/solanaUtils'; // Make sure this import exists
+import EthereumConfirmationModal from './EthereumConfirmationModal';
+import { calculatePriceImpact, formatGasEstimate } from '../utils/ethereumUtils';
+import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 
 
 
@@ -141,11 +144,12 @@ const itemVariants = {
 };
 
 interface Token {
-  address: string;
-  symbol: string;
   name: string;
   decimals: number;
   logoURI?: string;
+  address: string;
+  symbol: string;
+  _timestamp?: number;
 }
 
 interface SolanaToken {
@@ -837,33 +841,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     </button>
   );
 
-  const chainOptions = [
-    { id: mainnet.id, name: 'Ethereum' },
-    { id: polygon.id, name: 'Polygon' },
-    { id: optimism.id, name: 'Optimism' },
-    { id: arbitrum.id, name: 'Arbitrum' },
-    { id: base.id, name: 'Base' },
-    { id: avalanche.id, name: 'Avalanche' },
-    { id: bsc.id, name: 'BSC' },
-    { id: linea.id, name: 'Linea' },
-    { id: mantle.id, name: 'Mantle' },
-    { id: scroll.id, name: 'Scroll' },
-  ];
-
-  const renderChainSelector = () => (
-    <select
-      value={chainId}
-      onChange={(e) => setChainId(Number(e.target.value))}
-      className="bg-gray-800 text-white rounded-md p-2"
-    >
-      {chainOptions.map((chain) => (
-        <option key={chain.id} value={chain.id}>
-          {chain.name}
-        </option>
-      ))}
-    </select>
-  );
-
   const [slippageTolerance, setSlippageTolerance] = useState<number>(300); // Fixed 3% (300 basis points)
 
   const [swapStatus, setSwapStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -974,29 +951,23 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setIsConfirmationModalOpen(true);
   };
 
+  const [transactionStatus, setTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'rejected' | 'error'>('idle');
+
   const handleConfirmSwap = async () => {
     try {
       if (!sellToken || !buyToken || !sellAmount || !solanaWallet.publicKey) {
         throw new Error('Missing required swap parameters');
       }
 
-      setSwapStatus('loading');
+      setTransactionStatus('pending');
       setSwapError(null);
 
-      // Convert sell amount to proper units based on decimals
       const amountInBaseUnits = Math.floor(Number(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
 
-      console.log('Fetching quote with params:', {
-        inputMint: sellToken.address,
-        outputMint: buyToken.address,
-        amount: amountInBaseUnits
-      });
-
-      // Fetch quote first
       const quoteResponse = await fetchJupiterQuote({
         inputMint: sellToken.address,
         outputMint: buyToken.address,
-        amount: Number(amountInBaseUnits),
+        amount: amountInBaseUnits,
         slippageBps: slippageTolerance,
         restrictIntermediateTokens: true,
         maxAccounts: 64
@@ -1006,26 +977,31 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         throw new Error('Failed to get quote');
       }
 
-      console.log('Received quote:', quoteResponse);
-
-      // Execute the swap with the quote
-      const signature = await executeSolanaSwap(quoteResponse);
-      console.log('Swap executed successfully:', signature);
-
-      // Handle success
-      setSwapStatus('success');
-      setTransactionSignature(signature);
-      setIsConfirmationModalOpen(false);
-
-    } catch (error) {
-      console.error('Swap execution failed:', error);
-      setSwapStatus('error');
-      setSwapError(error instanceof Error ? error.message : 'Unknown error occurred');
+      try {
+        const signature = await executeSolanaSwap(quoteResponse);
+        console.log('Swap executed successfully:', signature);
+        setTransactionStatus('success');
+        setTransactionSignature(signature);
+      } catch (error: any) {
+        console.error('Swap execution failed:', error);
+        
+        // Check for user rejection
+        if (error.message?.includes('User rejected') || 
+            error.message?.includes('Transaction cancelled')) {
+          setTransactionStatus('rejected');
+        } else {
+          setTransactionStatus('error');
+          setSwapError(error.message || 'Unknown error occurred');
+        }
+      }
+    } catch (error: any) {
+      console.error('Swap preparation failed:', error);
+      setTransactionStatus('error');
+      setSwapError(error.message || 'Failed to prepare swap');
     }
   };
 
   const [transactionSignature, setTransactionSignature] = useState<string | null>(null);
-  const [transactionStatus, setTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
 
   const executeSolanaSwap = async (quoteResponse: any) => {
     try {
@@ -1234,19 +1210,170 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   }, [wallet.connected, wallet.publicKey]);
 
+  const [isEthConfirmationModalOpen, setIsEthConfirmationModalOpen] = useState(false);
+  const [ethTransactionStatus, setEthTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'rejected' | 'error'>('idle');
+  const [ethTransactionHash, setEthTransactionHash] = useState<string | null>(null);
+  const [estimatedGas, setEstimatedGas] = useState<bigint | undefined>();
+  const [gasPrice, setGasPrice] = useState<bigint | undefined>();
+
+  const handleEthereumSwap = async () => {
+    try {
+      if (!sellToken || !buyToken || !sellAmount || !address) {
+        throw new Error('Missing required parameters');
+      }
+
+      setEthTransactionStatus('pending');
+
+      // Format the sell amount with proper decimals
+      const sellAmountInWei = parseUnits(sellAmount, sellToken.decimals).toString();
+
+      // Fetch the swap quote
+      const quoteResponse = await axios.get('/api/swap-price', {
+        params: {
+          chainId,
+          sellToken: sellToken.address,
+          buyToken: buyToken.address,
+          sellAmount: sellAmountInWei,
+          takerAddress: address,
+        }
+      });
+
+      if (!quoteResponse.data || !quoteResponse.data.transaction) {
+        throw new Error('Failed to get swap quote');
+      }
+
+      // Check if approval is needed for ERC20 tokens (not needed for ETH)
+      if (sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        const allowance = await publicClient?.readContract({
+          address: sellToken.address as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'allowance',
+          args: [address, quoteResponse.data.transaction.to as `0x${string}`],
+        });
+
+        const sellAmountBigInt = BigInt(sellAmountInWei);
+        
+        if (allowance && allowance < sellAmountBigInt) {
+          const approveResult = await writeContract({
+            address: sellToken.address as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [quoteResponse.data.transaction.to, MaxUint256],
+          });
+
+          await waitForTransactionReceipt({
+            hash: approveResult,
+          });
+        }
+      }
+
+      // Execute the swap using sendTransaction
+      const { hash } = await sendTransactionAsync({
+        to: quoteResponse.data.transaction.to,
+        data: quoteResponse.data.transaction.data,
+        value: BigInt(quoteResponse.data.transaction.value || '0'),
+        chainId,
+      });
+
+      if (hash) {
+        setEthTransactionHash(hash);
+        setEthTransactionStatus('pending');
+
+        const receipt = await waitForTransactionReceipt({
+          hash,
+        });
+
+        if (receipt.status === 'success') {
+          setEthTransactionStatus('success');
+        } else {
+          setEthTransactionStatus('error');
+        }
+      }
+
+    } catch (error: any) {
+      console.error('Swap error:', error);
+      
+      if (error.message?.includes('rejected') || 
+          error.message?.includes('denied') || 
+          error.message?.includes('User rejected')) {
+        setEthTransactionStatus('rejected');
+      } else {
+        setEthTransactionStatus('error');
+      }
+    }
+  };
+
   const renderEthereumSwapInterface = () => {
     const isSwapDisabled = !isConnected || !sellToken || !buyToken || !sellAmount || isSwapPending || isSwapLoading;
-    console.log('Swap button disabled:', isSwapDisabled);
 
     return (
-      <div className="bg-gray-900 rounded-lg p-4">
-        <div className="mb-4">
-          <ConnectButton />
-        </div>
-        <div className="mb-4">
-          {renderChainSelector()}
-        </div>
+      <div ref={ethereumSwapContainerRef} className="flex-grow bg-gray-900 rounded-lg p-4">
+        <div className="mb-4 flex justify-between items-center">
+          <ConnectButton.Custom>
+            {({
+              account,
+              chain,
+              openAccountModal,
+              openConnectModal,
+              openChainModal,
+              mounted,
+            }) => {
+              const ready = mounted;
+              const connected = ready && account && chain;
 
+              return (
+                <div className="flex gap-4">
+                  <div
+                    {...(!ready && {
+                      'aria-hidden': true,
+                      'style': {
+                        opacity: 0,
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                      },
+                    })}
+                  >
+                    {(() => {
+                      if (!connected) {
+                        return (
+                          <button
+                            onClick={openConnectModal}
+                            className="bg-[#77be44] hover:bg-[#69aa3b] text-white font-bold py-3 px-[1.8rem] rounded-sm transition-colors"
+                            type="button"
+                          >
+                            Select Wallet
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          onClick={openAccountModal}
+                          className="bg-[#77be44] hover:bg-[#69aa3b] text-white font-bold py-3 px-[1.8rem] rounded-sm transition-colors flex items-center gap-2"
+                          type="button"
+                        >
+                          {account.displayName}
+                          {account.displayBalance ? ` (${account.displayBalance})` : ''}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                  {connected && (
+                    <button
+                      onClick={openChainModal}
+                      className="bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-sm transition-colors flex items-center gap-2"
+                      type="button"
+                    >
+                      {chain.name}
+                      <ChevronDown className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              );
+            }}
+          </ConnectButton.Custom>
+        </div>
+        
         <div className="mb-4">
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Sell</span>
@@ -1287,24 +1414,91 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         </div>
         <div className="flex justify-center">
           <button
-            onClick={handleSwap}
-            disabled={!isConnected || !sellToken || !buyToken || !sellAmount || swapStatus === 'loading'}
-            className="bg-blue-500 text-white font-bold py-2 px-4 rounded"
+            onClick={() => {
+              if (isConnected) {
+                setIsEthConfirmationModalOpen(true);
+              }
+            }}
+            disabled={isSwapDisabled}
+            className={`w-full py-3 rounded-lg font-semibold ${
+              isSwapDisabled
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                : 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
+            }`}
           >
-            {swapStatus === 'loading' ? 'Swapping...' : 'Swap'}
+            {!isConnected 
+              ? 'Connect Wallet' 
+              : isSwapPending 
+                ? 'Swapping...' 
+                : 'Swap'}
           </button>
         </div>
-        {isSwapSuccess && <div className="mt-2 text-center text-green-500">Swap successful!</div>}
-        {swapError && <div className="mt-2 text-center text-red-500">Swap failed: {swapError}</div>}
+
+        <EthereumConfirmationModal
+          isOpen={isEthConfirmationModalOpen}
+          onClose={() => {
+            setIsEthConfirmationModalOpen(false);
+            setEthTransactionStatus('idle');
+          }}
+          onConfirm={handleEthereumSwap}
+          sellAmount={sellAmount}
+          buyAmount={buyAmount}
+          sellToken={sellToken}
+          buyToken={buyToken}
+          slippage={ethSlippage}
+          transactionHash={ethTransactionHash}
+          containerRef={ethereumSwapContainerRef}
+          transactionStatus={ethTransactionStatus}
+          estimatedGas={estimatedGas}
+          gasPrice={gasPrice}
+          chainId={chainId}
+        />
       </div>
     );
   };
 
+  // Update the formatting helper function to also handle input formatting
+  const formatNumberWithCommas = (value: string) => {
+    if (!value) return '';
+    
+    // Remove existing commas first
+    const cleanValue = value.replace(/,/g, '');
+    
+    // Split into whole number and decimal parts
+    const [wholePart, decimalPart] = cleanValue.split('.');
+    
+    // Add commas to whole number part
+    const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    
+    // Return with decimal part if it exists
+    return decimalPart ? `${formattedWholePart}.${decimalPart}` : formattedWholePart;
+  };
+
+  // Add state for USD values
+  const [sellAmountUSD, setSellAmountUSD] = useState<string>('');
+  const [buyAmountUSD, setBuyAmountUSD] = useState<string>('');
+
+  // Helper function to format USD values
+  const formatUSDValue = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value);
+  };
+
+  const ethereumSwapContainerRef = useRef<HTMLDivElement>(null);
+  const solanaSwapContainerRef = useRef<HTMLDivElement>(null);
+
   const renderSolanaSwapInterface = () => {
-    const isSolanaSwapDisabled = !solanaWallet.connected || !sellToken || !buyToken || !sellAmount;
+    const isSolanaSwapDisabled = !solanaWallet.connected || !sellToken || !buyToken || !sellAmount || parseFloat(sellAmount) <= 0 || !buyAmount || parseFloat(buyAmount) <= 0 || transactionStatus === 'pending';
 
     return (
-      <div className="bg-gray-900 rounded-lg p-4">
+      <div 
+        ref={solanaSwapContainerRef} 
+        className="flex-grow bg-gray-900 rounded-lg p-4"
+      >
         <div className="mb-4">
           <WalletButton />
         </div>
@@ -1315,20 +1509,33 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           </div>
           <div className="flex items-center bg-gray-800 rounded-lg p-3">
             <input
-              type="number"
-              value={sellAmount}
-              onChange={(e) => setSellAmount(e.target.value)}
-              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              type="text"
+              value={formatNumberWithCommas(sellAmount)}
+              onChange={(e) => {
+                // Remove commas and validate
+                const rawValue = e.target.value.replace(/,/g, '');
+                if (rawValue === '' || /^\d*\.?\d*$/.test(rawValue)) {
+                  setSellAmount(rawValue);
+                }
+              }}
+              className="bg-transparent text-white text-2xl w-full outline-none"
               placeholder="0"
             />
             {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
           </div>
+          {sellAmountUSD && (
+            <div className="text-right text-gray-400 text-sm mt-1">
+              {sellAmountUSD}
+            </div>
+          )}
         </div>
+
         <div className="flex justify-center mb-4">
           <div className="bg-gray-800 p-2 rounded-full cursor-pointer" onClick={swapTokens}>
             <ArrowUpDown className="h-6 w-6 text-gray-400" />
           </div>
         </div>
+
         <div className="mb-4">
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Buy</span>
@@ -1336,43 +1543,53 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <div className="flex items-center bg-gray-800 rounded-lg p-3">
             <input
               type="text"
-              value={formatDisplayAmount(buyAmount, buyToken?.decimals || 6)}
+              value={formatNumberWithCommas(buyAmount)}
               readOnly
-              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="bg-transparent text-white text-2xl w-full outline-none"
               placeholder="0"
             />
             {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
           </div>
+          {buyAmountUSD && (
+            <div className="text-right text-gray-400 text-sm mt-1">
+              {buyAmountUSD}
+            </div>
+          )}
         </div>
+
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-400">Slippage Tolerance (%)</label>
           <input
             type="number"
-            value={slippageTolerance / 100} // Convert basis points to percentage
+            value={slippageTolerance / 100}
             onChange={(e) => {
               const newValue = Math.max(0, Math.min(500, parseFloat(e.target.value) * 100));
               setSlippageTolerance(isNaN(newValue) ? DEFAULT_SLIPPAGE_BPS : newValue);
             }}
-            className="mt-1 block w-full rounded-md bg-gray-800 border-gray-700 text-white"
-            placeholder="5.0"
+            className="mt-1 block w-full rounded-md bg-gray-800 border-gray-700 text-white p-2"
+            placeholder="3.0"
             min="0"
             max="5"
             step="0.1"
           />
         </div>
-        <div className="flex justify-center">
-          <button 
-            onClick={handleSwapClick} 
-            disabled={!solanaWallet.connected || !sellToken || !buyToken || !sellAmount || parseFloat(sellAmount) <= 0 || !buyAmount || parseFloat(buyAmount) <= 0 || transactionStatus === 'pending'}
-            className={`w-full py-3 rounded-lg font-semibold ${
-              (!solanaWallet.connected || !sellToken || !buyToken || !sellAmount || parseFloat(sellAmount) <= 0 || !buyAmount || parseFloat(buyAmount) <= 0 || transactionStatus === 'pending')
-                ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            {transactionStatus === 'pending' ? 'Swapping...' : 'Swap'}
-          </button>
-        </div>
+
+        <button 
+          onClick={solanaWallet.connected ? handleSwapClick : () => {}} // Only show swap modal if wallet is connected
+          disabled={isSolanaSwapDisabled}
+          className={`w-full py-3 rounded-lg font-semibold ${
+            isSolanaSwapDisabled
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              : 'bg-purple-500 text-white hover:bg-purple-600'
+          }`}
+        >
+          {!solanaWallet.connected 
+            ? 'Connect Wallet'
+            : transactionStatus === 'pending' 
+              ? 'Swapping...' 
+              : 'Swap'
+          }
+        </button>
 
         {transactionStatus !== 'idle' && (
           <div className="mt-4">
@@ -1383,15 +1600,35 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               {swapMessage}
             </p>
             {transactionSignature && (
-              <button
-                onClick={() => window.open(`https://solscan.io/tx/${transactionSignature}`, '_blank')}
-                className="mt-2 bg-blue-500 text-white px-4 py-2 rounded"
+              <a
+                href={`https://solscan.io/tx/${transactionSignature}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:text-blue-600 underline text-sm"
               >
-                View Transaction
-              </button>
+                View on Explorer
+              </a>
             )}
           </div>
         )}
+        
+        <SwapConfirmationModal
+          isOpen={isConfirmationModalOpen}
+          onClose={() => {
+            setIsConfirmationModalOpen(false);
+            setTransactionStatus('idle'); // Reset status when closing
+          }}
+          onConfirm={handleConfirmSwap}
+          sellAmount={sellAmount}
+          buyAmount={buyAmount}
+          sellToken={sellToken?.symbol || ''}
+          buyToken={buyToken?.symbol || ''}
+          slippage={DEFAULT_SLIPPAGE_BPS / 100}
+          transactionSignature={transactionSignature}
+          containerRef={solanaSwapContainerRef}
+          transactionStatus={transactionStatus}
+          error={swapError}
+        />
       </div>
     );
   };
@@ -1474,6 +1711,56 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     };
   }, []);
 
+  // Update useEffect for USD values
+  useEffect(() => {
+    const updateUSDValues = async () => {
+      if (sellToken && sellAmount) {
+        try {
+          const price = await fetchTokenPrice(sellToken.address, activeChain);
+          if (price > 0) {
+            const usdValue = parseFloat(sellAmount.replace(/,/g, '')) * price;
+            setSellAmountUSD(formatUSDValue(usdValue));
+          }
+        } catch (error) {
+          console.error('Error fetching sell token price:', error);
+          setSellAmountUSD('$0.00');
+        }
+      }
+
+      if (buyToken && buyAmount) {
+        try {
+          const price = await fetchTokenPrice(buyToken.address, activeChain);
+          if (price > 0) {
+            const usdValue = parseFloat(buyAmount.replace(/,/g, '')) * price;
+            setBuyAmountUSD(formatUSDValue(usdValue));
+          }
+        } catch (error) {
+          console.error('Error fetching buy token price:', error);
+          setBuyAmountUSD('$0.00');
+        }
+      }
+    };
+
+    updateUSDValues();
+  }, [sellToken, buyToken, sellAmount, buyAmount, activeChain]);
+
+  // Update the useEffect that handles chain switching
+  useEffect(() => {
+    // Reset all values when switching chains
+    setSellToken(null);
+    setBuyToken(null);
+    setSellAmount('');
+    setBuyAmount('');
+    // Also reset USD values
+    setSellAmountUSD('');
+    setBuyAmountUSD('');
+    // Reset any other relevant states
+    setTransactionStatus('idle');
+    setTransactionSignature(null);
+    setSwapMessage('');
+    setError(null);
+  }, [activeChain]);
+
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
       <div className="w-full mb-4">
@@ -1494,8 +1781,25 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               <EthSlippageSettings slippage={ethSlippage} setSlippage={setEthSlippage} />
             </div>
           ) : (
-            <div className="flex-grow bg-gray-900 rounded-lg">
+            <div className="flex-grow bg-gray-900 rounded-lg relative">
               {renderSolanaSwapInterface()}
+              <SwapConfirmationModal
+                isOpen={isConfirmationModalOpen}
+                onClose={() => {
+                  setIsConfirmationModalOpen(false);
+                  setTransactionStatus('idle'); // Reset status when closing
+                }}
+                onConfirm={handleConfirmSwap}
+                sellAmount={sellAmount}
+                buyAmount={buyAmount}
+                sellToken={sellToken?.symbol || ''}
+                buyToken={buyToken?.symbol || ''}
+                slippage={DEFAULT_SLIPPAGE_BPS / 100}
+                transactionSignature={transactionSignature}
+                containerRef={solanaSwapContainerRef}
+                transactionStatus={transactionStatus}
+                error={swapError}
+              />
             </div>
           )}
         </div>
@@ -1511,17 +1815,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           />
         )}
       </div>
-      <SwapConfirmationModal
-        isOpen={isConfirmationModalOpen}
-        onClose={() => setIsConfirmationModalOpen(false)}
-        onConfirm={handleConfirmSwap}
-        sellAmount={sellAmount}
-        buyAmount={buyAmount}
-        sellToken={sellToken?.symbol || ''}
-        buyToken={buyToken?.symbol || ''}
-        slippage={DEFAULT_SLIPPAGE_BPS / 100}
-        transactionSignature={transactionSignature}
-      />
       {showTokenSelect && (
         <TokenSelectModal
           tokens={tokens}
