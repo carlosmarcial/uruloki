@@ -64,15 +64,16 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
       return 'eth';
     }
     
-    // Remove '0x' prefix and ensure lowercase
-    const cleanAddress = address.toLowerCase().replace('0x', '');
-    
-    // For Solana, return as is (without 0x)
+    // For Solana tokens, we need to handle the address format differently
     if (network === 'solana') {
+      // Remove any potential 'spl-' prefix
+      const cleanAddress = address.replace('spl-', '');
+      // Return the clean address without modification
       return cleanAddress;
     }
     
-    // For EVM chains, add back the '0x' prefix
+    // For EVM chains, handle as before
+    const cleanAddress = address.toLowerCase().replace('0x', '');
     return `0x${cleanAddress}`;
   };
 
@@ -89,8 +90,52 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         return `https://www.geckoterminal.com/eth/pools/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
       }
 
+      // For Solana tokens, first try to get token info
+      if (network === 'solana') {
+        try {
+          // First try to get token pools
+          const tokenResponse = await axios.get(
+            `https://api.geckoterminal.com/api/v2/networks/solana/tokens/${formattedAddress}`,
+            {
+              headers: {
+                'Accept': 'application/json'
+              }
+            }
+          );
+
+          // If we have pools data, get the most liquid pool
+          if (tokenResponse.data?.data?.relationships?.top_pools?.data?.[0]?.id) {
+            const poolId = tokenResponse.data.data.relationships.top_pools.data[0].id;
+            const [networkId, poolAddress] = poolId.split('_');
+            return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
+          }
+        } catch (err) {
+          console.warn('Token info fetch failed:', err);
+        }
+
+        // Fallback to searching pools
+        try {
+          const poolsResponse = await axios.get(
+            `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${formattedAddress}/pools?page=1&limit=1`,
+            {
+              headers: {
+                'Accept': 'application/json'
+              }
+            }
+          );
+
+          if (poolsResponse.data?.data?.[0]?.id) {
+            const [networkId, poolAddress] = poolsResponse.data.data[0].id.split('_');
+            return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
+          }
+        } catch (err) {
+          console.warn('Pools search failed:', err);
+          throw new Error('No trading pools found for this token');
+        }
+      }
+
+      // For other networks, continue with existing logic
       try {
-        // First try to get the most liquid pool
         const poolsResponse = await axios.get(
           `https://api.geckoterminal.com/api/v2/search/pools?query=${formattedAddress}&network=${network}`,
           {
@@ -102,19 +147,19 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
 
         if (poolsResponse.data?.data?.[0]?.attributes?.address) {
           const poolAddress = poolsResponse.data.data[0].attributes.address;
-          // Updated URL parameters for minimal view
           return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
         }
       } catch (err) {
-        console.warn('Pool search failed, falling back to token view:', err);
+        console.warn('Pool search failed:', err);
+        throw new Error('No trading pools found for this token');
       }
 
-      // Fallback to token view with minimal parameters
-      return `https://www.geckoterminal.com/${network}/tokens/${formattedAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
+      // If we get here, we couldn't find any pools
+      throw new Error('No trading pools found for this token');
 
     } catch (err) {
       console.error('Error fetching GeckoTerminal data:', err);
-      setError('Failed to load chart');
+      setError(err instanceof Error ? err.message : 'Failed to load chart');
       return null;
     } finally {
       setIsLoading(false);
