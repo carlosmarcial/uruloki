@@ -4,8 +4,10 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 
 export function WalletButton() {
   return (
-    <WalletMultiButton
-      className="bg-[#77be44] hover:bg-[#69a93d] text-black font-bold py-2 px-4 rounded"
-    />
+    <div className="flex justify-start">
+      <WalletMultiButton
+        className="py-3 px-6 rounded-sm font-bold text-base w-[152px] bg-[#77be44] hover:bg-[#69aa3b] text-white transition-colors"
+      />
+    </div>
   );
 }

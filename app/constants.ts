@@ -75,12 +75,12 @@ export const AVALANCHE_RPC_URL = 'https://api.avax.network/ext/bc/C/rpc';
 export const AVALANCHE_EXPLORER_URL = 'https://snowtrace.io';
 
 // Slippage Constants
-export const ETH_DEFAULT_SLIPPAGE_PERCENTAGE = 5;
+export const ETH_DEFAULT_SLIPPAGE_PERCENTAGE = 0.5;
 export const ETH_MIN_SLIPPAGE_PERCENTAGE = 0.1;
 export const ETH_MAX_SLIPPAGE_PERCENTAGE = 50;
 export const SOLANA_MIN_SLIPPAGE_BPS = 10;
 export const SOLANA_MAX_SLIPPAGE_BPS = 5000;
-export const SOLANA_DEFAULT_SLIPPAGE_BPS = 300;
+export const SOLANA_DEFAULT_SLIPPAGE_BPS = 50;
 
 // Interfaces
 export interface Token {
@@ -240,6 +240,9 @@ export const SOLANA_TOKENS_BY_ADDRESS = SOLANA_TOKENS.reduce((acc, token) => {
 // Solana Specific Constants
 export const NATIVE_SOL_MINT = '11111111111111111111111111111111';
 export const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const SOL_MINT_ADDRESSES = [NATIVE_SOL_MINT, WRAPPED_SOL_MINT];
+
+// Jupiter API URLs
 export const JUPITER_QUOTE_API_URL = 'https://quote-api.jup.ag/v6/quote';
 export const JUPITER_SWAP_API_URL = 'https://quote-api.jup.ag/v6';
 export const JUPITER_SWAP_INSTRUCTIONS_API_URL = 'https://quote-api.jup.ag/v6/swap-instructions';

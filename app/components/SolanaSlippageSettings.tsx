@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import { Settings } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
-import { ETH_MIN_SLIPPAGE_PERCENTAGE, ETH_MAX_SLIPPAGE_PERCENTAGE } from '@app/constants';
+import { SOLANA_MIN_SLIPPAGE_BPS, SOLANA_MAX_SLIPPAGE_BPS } from '@app/constants';
 
-interface EthSlippageSettingsProps {
+interface SolanaSlippageSettingsProps {
   slippage: number;
   onSlippageChange: (value: number) => void;
 }
 
 const PRESET_SLIPPAGES = [0.5, 1, 2, 3, 4, 5];
 
-const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
+const SolanaSlippageSettings: React.FC<SolanaSlippageSettingsProps> = ({
   slippage,
   onSlippageChange,
 }) => {
@@ -20,7 +20,9 @@ const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
   const handleCustomValueChange = (value: string) => {
     setCustomValue(value);
     const numValue = parseFloat(value);
-    if (!isNaN(numValue) && numValue >= ETH_MIN_SLIPPAGE_PERCENTAGE && numValue <= ETH_MAX_SLIPPAGE_PERCENTAGE) {
+    if (!isNaN(numValue) && 
+        numValue >= (SOLANA_MIN_SLIPPAGE_BPS / 100) && 
+        numValue <= (SOLANA_MAX_SLIPPAGE_BPS / 100)) {
       onSlippageChange(numValue);
     }
   };
@@ -30,7 +32,7 @@ const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
       <div className="flex items-center justify-end mb-4">
         <Popover.Trigger asChild>
           <button className="flex items-center text-gray-400 hover:text-white transition-colors">
-            <span className="mr-2">Slippage Tolerance {slippage}%</span>
+            <span className="mr-2">Slippage Tolerance {slippage.toFixed(1)}%</span>
             <Settings className="h-4 w-4" />
           </button>
         </Popover.Trigger>
@@ -48,11 +50,12 @@ const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
                   key={value}
                   onClick={() => {
                     setIsCustom(false);
+                    setCustomValue('');
                     onSlippageChange(value);
                   }}
                   className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors
                     ${slippage === value && !isCustom
-                      ? 'bg-[#77be44] text-white'
+                      ? 'bg-purple-500 text-white'
                       : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                     }`}
                 >
@@ -66,7 +69,7 @@ const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
                 onClick={() => setIsCustom(true)}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors
                   ${isCustom
-                    ? 'bg-[#77be44] text-white'
+                    ? 'bg-purple-500 text-white'
                     : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                   }`}
               >
@@ -78,8 +81,8 @@ const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
                   value={customValue}
                   onChange={(e) => handleCustomValueChange(e.target.value)}
                   placeholder="0.0"
-                  min={ETH_MIN_SLIPPAGE_PERCENTAGE}
-                  max={ETH_MAX_SLIPPAGE_PERCENTAGE}
+                  min={SOLANA_MIN_SLIPPAGE_BPS / 100}
+                  max={SOLANA_MAX_SLIPPAGE_BPS / 100}
                   step="0.1"
                   className="bg-gray-700 text-white rounded-lg px-3 py-2 w-24 text-sm"
                 />
@@ -88,7 +91,7 @@ const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
 
             {isCustom && (
               <p className="text-xs text-gray-400">
-                Enter a value between {ETH_MIN_SLIPPAGE_PERCENTAGE}% and {ETH_MAX_SLIPPAGE_PERCENTAGE}%
+                Enter a value between {(SOLANA_MIN_SLIPPAGE_BPS / 100).toFixed(1)}% and {(SOLANA_MAX_SLIPPAGE_BPS / 100).toFixed(1)}%
               </p>
             )}
           </div>
@@ -100,4 +103,4 @@ const EthSlippageSettings: React.FC<EthSlippageSettingsProps> = ({
   );
 };
 
-export default EthSlippageSettings;
+export default SolanaSlippageSettings; 

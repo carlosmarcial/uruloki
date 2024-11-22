@@ -80,6 +80,10 @@ import { fetchSolanaTokens } from '../utils/solanaUtils'; // Make sure this impo
 import EthereumConfirmationModal from './EthereumConfirmationModal';
 import { calculatePriceImpact, formatGasEstimate } from '../utils/ethereumUtils';
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
+import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceUtils';
+import SolanaSlippageSettings from './SolanaSlippageSettings';
+import { SOLANA_DEFAULT_SLIPPAGE_BPS } from '@app/constants';
+import { SOL_MINT_ADDRESSES } from '@app/constants';
 
 
 
@@ -184,6 +188,81 @@ const isTransactionValid = (transaction: VersionedTransaction) => {
   return true;
 };
 
+// Add this at the top level, before the component definition
+const formatUsdValue = (amount: string | number, price: number) => {
+  if (!amount || !price) return '$0.00';
+  
+  // Convert amount to number and remove commas if it's a string
+  const numericAmount = typeof amount === 'string' ? 
+    parseFloat(amount.replace(/,/g, '')) : amount;
+  
+  if (isNaN(numericAmount)) return '$0.00';
+  
+  const value = numericAmount * price;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+};
+
+// Add this at the top level, outside the component
+const priceCache = new Map<string, { price: number; timestamp: number }>();
+const CACHE_DURATION = 60000; // 1 minute cache duration
+
+// Add this helper function
+const getCachedPrice = (tokenAddress: string): number | null => {
+  const cached = priceCache.get(tokenAddress);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.price;
+  }
+  return null;
+};
+
+// Move this hook outside the component
+const useSolanaTokenBalance = (
+  token: any, 
+  publicKey: PublicKey | null,
+  connection: Connection | null
+) => {
+  const [balance, setBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!token || !publicKey || !connection) return;
+
+      try {
+        // Use the imported SOL_MINT_ADDRESSES
+        if (SOL_MINT_ADDRESSES.includes(token.address)) {
+          const solBalance = await connection.getBalance(publicKey);
+          setBalance(solBalance / LAMPORTS_PER_SOL);
+        } else {
+          const tokenMint = new PublicKey(token.address);
+          const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
+            mint: tokenMint
+          });
+
+          if (tokenAccounts.value[0]) {
+            const balance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
+            setBalance(balance);
+          } else {
+            setBalance(0);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching token balance:', error);
+        setBalance(0);
+      }
+    };
+
+    fetchBalance();
+    const interval = setInterval(fetchBalance, 30000);
+    return () => clearInterval(interval);
+  }, [token, publicKey, connection]);
+
+  return balance;
+};
 
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
@@ -451,23 +530,33 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Update the fetchQuote function
   const fetchQuote = async () => {
     try {
+      const sellTokenAddress = sellToken?.address === ETH_ADDRESS ? 
+        'ETH' : sellToken?.address;
+      const buyTokenAddress = buyToken?.address === ETH_ADDRESS ? 
+        'ETH' : buyToken?.address;
+
+      console.log('Fetching quote with params:', {
+        chainId,
+        sellToken: sellTokenAddress,
+        buyToken: buyTokenAddress,
+        sellAmount: parseUnits(sellAmount, sellToken?.decimals || 18).toString(),
+        takerAddress: address,
+      });
+
       const response = await axios.get('/api/swap-price', {
         params: {
           chainId,
-          sellToken: sellToken?.address as `0x${string}`,
-          buyToken: buyToken?.address as `0x${string}`,
-          sellAmount: parseUnits(sellAmount, sellToken?.decimals || 0).toString(),
+          sellToken: sellTokenAddress,
+          buyToken: buyTokenAddress,
+          sellAmount: parseUnits(sellAmount, sellToken?.decimals || 18).toString(),
           takerAddress: address,
         }
       });
-      
-      console.log('Raw quote response:', response.data);
-      
-      if (!response.data?.transaction?.to || !response.data?.transaction?.data) {
-        console.error('Invalid quote response:', response.data);
-        throw new Error('Invalid quote response - missing transaction details');
+
+      if (!response.data?.to || !response.data?.data) {
+        throw new Error(`Invalid quote response: ${JSON.stringify(response.data)}`);
       }
-      
+
       return response.data;
     } catch (error) {
       console.error('Error fetching quote:', error);
@@ -502,7 +591,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         address: sellToken.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'allowance',
-        args: [address, PERMIT2_ADDRESS as `0x${string}`]
+        args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`]
       }) as bigint;
 
       console.log('Current allowance:', currentAllowance.toString());
@@ -962,20 +1051,29 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       setTransactionStatus('pending');
       setSwapError(null);
 
-      const amountInBaseUnits = Math.floor(Number(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
+      const amountInBaseUnits = Math.floor(
+        parseFloat(sellAmount.replace(/,/g, '')) * Math.pow(10, sellToken.decimals)
+      ).toString();
+
+      // Use a more conservative slippage value
+      const slippageBps = Math.round(solanaSlippagePercentage * 100);
+      console.log('Using slippage for quote (bps):', slippageBps);
 
       const quoteResponse = await fetchJupiterQuote({
         inputMint: sellToken.address,
         outputMint: buyToken.address,
         amount: amountInBaseUnits,
-        slippageBps: slippageTolerance,
-        restrictIntermediateTokens: true,
+        slippageBps,
         maxAccounts: 64
       });
 
-      if (!quoteResponse) {
-        throw new Error('Failed to get quote');
+      if (!quoteResponse || !quoteResponse.outAmount) {
+        console.error('Invalid quote response:', quoteResponse);
+        throw new Error('Failed to get valid quote');
       }
+
+      // Add a small delay before executing swap
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       try {
         const signature = await executeSolanaSwap(quoteResponse);
@@ -985,9 +1083,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       } catch (error: any) {
         console.error('Swap execution failed:', error);
         
-        // Check for user rejection
-        if (error.message?.includes('User rejected') || 
-            error.message?.includes('Transaction cancelled')) {
+        if (error.message?.includes('6001')) {
+          setSwapError('Price impact too high. Try increasing slippage tolerance or reducing trade size.');
+          setTransactionStatus('error');
+        } else if (error.message?.includes('User rejected') || 
+                   error.message?.includes('Transaction cancelled')) {
           setTransactionStatus('rejected');
         } else {
           setTransactionStatus('error');
@@ -1003,26 +1103,25 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const [transactionSignature, setTransactionSignature] = useState<string | null>(null);
 
+  // Update the executeSolanaSwap function
   const executeSolanaSwap = async (quoteResponse: any) => {
     try {
-      // Validate wallet connection
       if (!solanaWallet || !solanaWallet.publicKey) {
         throw new Error('Wallet not connected');
       }
 
-      // Get swap instructions with optimized settings
+      const slippageBps = Math.round(solanaSlippagePercentage * 100);
+      console.log('Using slippage (bps):', slippageBps);
+
       const swapResponse = await fetchJupiterSwapInstructions({
         swapRequest: {
           quoteResponse,
           userPublicKey: solanaWallet.publicKey.toString(),
           wrapUnwrapSOL: true,
-          slippageBps: slippageTolerance,
-          prioritizationFeeLamports: {
-            priorityLevelWithMaxLamports: {
-              maxLamports: 10000000,
-              priorityLevel: "veryHigh"
-            }
-          }
+          slippageBps,
+          dynamicComputeUnitLimit: true,
+          useSharedAccounts: true,
+          asLegacyTransaction: false
         }
       });
 
@@ -1030,13 +1129,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         throw new Error('Failed to get swap transaction');
       }
 
-      // Decode and sign transaction
       const swapTransactionBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
       const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
-
-      // Get fresh blockhash
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-      transaction.message.recentBlockhash = blockhash;
 
       if (!solanaWallet.signTransaction) {
         throw new Error('Wallet does not support transaction signing');
@@ -1044,71 +1138,109 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
       const signedTransaction = await solanaWallet.signTransaction(transaction);
 
-      // Submit transaction using Jupiter's endpoint for better success rate
-      const transactionBase64 = Buffer.from(signedTransaction.serialize()).toString('base64');
+      // Send transaction with retries
+      let signature: string | null = null;
+      let retries = 0;
+      const maxRetries = 3;
 
-      // First try Jupiter's worker
-      try {
-        const response = await fetch('https://worker.jup.ag/v6/send-transaction', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            transaction: transactionBase64,
-            options: {
-              skipPreflight: true,
-              maxRetries: 3,
-              preflightCommitment: 'processed'
-            }
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Jupiter worker error: ${response.status}`);
+      while (retries < maxRetries && !signature) {
+        try {
+          signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
+            skipPreflight: true,
+            maxRetries: 3,
+            preflightCommitment: 'processed'
+          });
+          console.log('Transaction sent, signature:', signature);
+          break;
+        } catch (error) {
+          console.error(`Send attempt ${retries + 1} failed:`, error);
+          retries++;
+          if (retries === maxRetries) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000 * retries));
         }
-
-        const { signature } = await response.json();
-        console.log('Transaction submitted via Jupiter worker:', signature);
-
-        // Wait for confirmation
-        const status = await connection.confirmTransaction({
-          signature,
-          blockhash,
-          lastValidBlockHeight
-        }, 'confirmed');
-
-        if (status.value.err) {
-          throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
-        }
-
-        return signature;
-
-      } catch (jupiterError) {
-        console.warn('Jupiter worker failed, falling back to direct RPC:', jupiterError);
-
-        // Fallback to direct RPC submission
-        const signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
-          skipPreflight: true,
-          maxRetries: 3,
-          preflightCommitment: 'processed'
-        });
-
-        console.log('Transaction submitted via direct RPC:', signature);
-
-        // Wait for confirmation
-        const status = await connection.confirmTransaction({
-          signature,
-          blockhash,
-          lastValidBlockHeight
-        }, 'confirmed');
-
-        if (status.value.err) {
-          throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
-        }
-
-        return signature;
       }
+
+      if (!signature) {
+        throw new Error('Failed to send transaction after retries');
+      }
+
+      // Use both polling and WebSocket for confirmation
+      return new Promise((resolve, reject) => {
+        let isResolved = false;
+        const timeoutDuration = 60000; // 1 minute timeout
+        let timeoutId: NodeJS.Timeout;
+        let pollIntervalId: NodeJS.Timeout;
+
+        const cleanup = () => {
+          clearTimeout(timeoutId);
+          clearInterval(pollIntervalId);
+        };
+
+        // Start polling immediately
+        const pollStatus = async () => {
+          try {
+            const status = await connection.getSignatureStatus(signature!, {
+              searchTransactionHistory: true
+            });
+
+            if (status.value?.err) {
+              if (!isResolved) {
+                isResolved = true;
+                cleanup();
+                reject(new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`));
+              }
+              return;
+            }
+
+            if (status.value?.confirmationStatus === 'confirmed' || 
+                status.value?.confirmationStatus === 'finalized') {
+              if (!isResolved) {
+                isResolved = true;
+                cleanup();
+                resolve(signature);
+              }
+              return;
+            }
+          } catch (error) {
+            console.error('Error polling status:', error);
+          }
+        };
+
+        // Poll every second
+        pollIntervalId = setInterval(pollStatus, 1000);
+        // Initial poll
+        pollStatus();
+
+        // Also use WebSocket for faster confirmation
+        solanaWebSocket.subscribeToTransaction(signature, {
+          onStatusChange: async (status) => {
+            if (status === 'success' && !isResolved) {
+              isResolved = true;
+              cleanup();
+              resolve(signature);
+            } else if (status === 'error' && !isResolved) {
+              isResolved = true;
+              cleanup();
+              reject(new Error('Transaction failed'));
+            }
+          }
+        }).catch(error => {
+          console.error('WebSocket subscription error:', error);
+          // Don't fail here, let polling handle it
+        });
+
+        // Set overall timeout
+        timeoutId = setTimeout(() => {
+          // Check one last time before timing out
+          pollStatus().catch(() => {
+            if (!isResolved) {
+              isResolved = true;
+              cleanup();
+              reject(new Error('Transaction confirmation timeout'));
+            }
+          });
+        }, timeoutDuration);
+      });
 
     } catch (error) {
       console.error('Swap execution failed:', error);
@@ -1149,7 +1281,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           console.error('Transaction error:', signatureStatus.value.err);
           return 'error';
         }
-        if (signatureStatus.value.confirmationStatus === 'confirmed' || signatureStatus.value.confirmationStatus === 'finalized') {
+        if (signatureStatus.value.confirmationStatus === 'processed' || signatureStatus.value.confirmationStatus === 'confirmed' || signatureStatus.value.confirmationStatus === 'finalized') {
           return 'success';
         }
       }
@@ -1216,78 +1348,121 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [estimatedGas, setEstimatedGas] = useState<bigint | undefined>();
   const [gasPrice, setGasPrice] = useState<bigint | undefined>();
 
-  const handleEthereumSwap = async () => {
+  // Update handleTokenApproval to use the correct spender address
+  const handleTokenApproval = async () => {
+    if (!sellToken || !address || !sellAmount || !publicClient || !writeContract) {
+      throw new Error('Missing parameters for token approval');
+    }
+
     try {
-      if (!sellToken || !buyToken || !sellAmount || !address) {
-        throw new Error('Missing required parameters');
-      }
+      console.log('Checking approval for token:', sellToken.address);
+      
+      const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
 
-      setEthTransactionStatus('pending');
+      // Always use PERMIT2_ADDRESS as the spender
+      const spenderAddress = PERMIT2_ADDRESS;
+      console.log('Using Permit2 address:', spenderAddress);
 
-      // Format the sell amount with proper decimals
-      const sellAmountInWei = parseUnits(sellAmount, sellToken.decimals).toString();
-
-      // Fetch the swap quote
-      const quoteResponse = await axios.get('/api/swap-price', {
-        params: {
-          chainId,
-          sellToken: sellToken.address,
-          buyToken: buyToken.address,
-          sellAmount: sellAmountInWei,
-          takerAddress: address,
-        }
+      // Check current allowance for Permit2
+      const allowance = await publicClient.readContract({
+        address: sellToken.address as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [address as `0x${string}`, spenderAddress as `0x${string}`],
       });
 
-      if (!quoteResponse.data || !quoteResponse.data.transaction) {
-        throw new Error('Failed to get swap quote');
-      }
+      console.log('Current Permit2 allowance:', allowance?.toString());
+      console.log('Required amount:', sellAmountBigInt.toString());
 
-      // Check if approval is needed for ERC20 tokens (not needed for ETH)
-      if (sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
-        const allowance = await publicClient?.readContract({
+      if (!allowance || sellAmountBigInt > allowance) {
+        console.log('Approval needed, preparing transaction...');
+        
+        // Prepare approval transaction for Permit2
+        const { request } = await publicClient.simulateContract({
           address: sellToken.address as `0x${string}`,
           abi: ERC20_ABI,
-          functionName: 'allowance',
-          args: [address, quoteResponse.data.transaction.to as `0x${string}`],
+          functionName: 'approve',
+          args: [spenderAddress as `0x${string}`, MaxUint256],
+          account: address,
         });
 
-        const sellAmountBigInt = BigInt(sellAmountInWei);
-        
-        if (allowance && allowance < sellAmountBigInt) {
-          const approveResult = await writeContract({
-            address: sellToken.address as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [quoteResponse.data.transaction.to, MaxUint256],
-          });
+        // Send approval transaction
+        const hash = await writeContract(request);
+        console.log('Approval transaction submitted:', hash);
 
-          await waitForTransactionReceipt({
-            hash: approveResult,
-          });
+        // Wait for confirmation
+        const receipt = await waitForTransactionReceipt(config, {
+          hash,
+          confirmations: 1,
+        });
+
+        console.log('Approval transaction receipt:', receipt);
+
+        if (receipt.status !== 'success') {
+          throw new Error('Approval transaction failed');
         }
+
+        console.log('Approval confirmed');
+        
+        // Add a small delay to ensure the blockchain state is updated
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+      } else {
+        console.log('Token already has sufficient Permit2 allowance');
+      }
+    } catch (error: any) {
+      console.error('Permit2 approval failed:', error);
+      throw new Error(`Permit2 approval failed: ${error.message}`);
+    }
+  };
+
+  // Remove any existing handleEthereumSwap function and replace with this:
+  const handleEthereumSwap = async (): Promise<void> => {
+    if (!sellToken || !buyToken || !sellAmount || !address) {
+      throw new Error('Missing required parameters');
+    }
+
+    try {
+      setEthTransactionStatus('pending');
+
+      // Get quote first
+      const quote = await fetchQuote();
+      console.log('Quote received:', quote);
+
+      // Check and handle Permit2 allowance if needed
+      if (sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
+        await handleTokenApproval();
+        console.log('Token approval confirmed');
       }
 
-      // Execute the swap using sendTransaction
-      const { hash } = await sendTransactionAsync({
-        to: quoteResponse.data.transaction.to,
-        data: quoteResponse.data.transaction.data,
-        value: BigInt(quoteResponse.data.transaction.value || '0'),
+      const txData = quote.permit2?.eip712 
+        ? await handlePermit2Signature(quote)
+        : quote.data;
+
+      const txParams = {
+        to: quote.to as `0x${string}`,
+        data: txData as `0x${string}`,
+        value: BigInt(quote.value || '0'),
         chainId,
+      };
+
+      console.log('Sending transaction with params:', txParams);
+
+      const hash = await sendTransactionAsync(txParams);
+      console.log('Transaction submitted:', hash);
+      setEthTransactionHash(hash);
+
+      const receipt = await waitForTransactionReceipt(config, {
+        hash,
+        confirmations: 1,
       });
-
-      if (hash) {
-        setEthTransactionHash(hash);
-        setEthTransactionStatus('pending');
-
-        const receipt = await waitForTransactionReceipt({
-          hash,
-        });
-
-        if (receipt.status === 'success') {
-          setEthTransactionStatus('success');
-        } else {
-          setEthTransactionStatus('error');
-        }
+      
+      console.log('Transaction receipt:', receipt);
+      
+      if (receipt.status === 'success') {
+        setEthTransactionStatus('success');
+      } else {
+        setEthTransactionStatus('error');
       }
 
     } catch (error: any) {
@@ -1303,71 +1478,69 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  const renderEthereumSwapInterface = () => {
-    const isSwapDisabled = !isConnected || !sellToken || !buyToken || !sellAmount || isSwapPending || isSwapLoading;
+  // Add this helper function to handle Permit2 signature
+  const handlePermit2Signature = async (quote: any): Promise<string> => {
+    console.log('Signing Permit2 message...');
+    const signature = await signTypedDataAsync(quote.permit2.eip712);
+    console.log('Permit2 signature obtained');
 
+    const MAGIC_CALLDATA_STRING = "f".repeat(130);
+    let txData = quote.data;
+
+    if (txData.includes(MAGIC_CALLDATA_STRING)) {
+      return txData.replace(
+        MAGIC_CALLDATA_STRING, 
+        signature.slice(2)
+      ) as `0x${string}`;
+    } 
+
+    const signatureLengthInHex = numberToHex(size(signature), {
+      signed: false,
+      size: 32,
+    });
+    
+    return concat([
+      txData, 
+      signatureLengthInHex, 
+      signature
+    ]) as `0x${string}`;
+  };
+
+  // Add this state near the top of the component with other state declarations
+  const [ethSlippagePercentage, setEthSlippagePercentage] = useState<number>(
+    ETH_DEFAULT_SLIPPAGE_PERCENTAGE
+  );
+
+  // Update the renderEthereumSwapInterface function
+  const renderEthereumSwapInterface = () => {
     return (
       <div ref={ethereumSwapContainerRef} className="flex-grow bg-gray-900 rounded-lg p-4">
-        <div className="mb-4 flex justify-between items-center">
+        <div className="mb-4">
           <ConnectButton.Custom>
             {({
               account,
               chain,
               openAccountModal,
               openConnectModal,
-              openChainModal,
               mounted,
             }) => {
               const ready = mounted;
               const connected = ready && account && chain;
 
               return (
-                <div className="flex gap-4">
-                  <div
-                    {...(!ready && {
-                      'aria-hidden': true,
-                      'style': {
-                        opacity: 0,
-                        pointerEvents: 'none',
-                        userSelect: 'none',
-                      },
-                    })}
-                  >
-                    {(() => {
-                      if (!connected) {
-                        return (
-                          <button
-                            onClick={openConnectModal}
-                            className="bg-[#77be44] hover:bg-[#69aa3b] text-white font-bold py-3 px-[1.8rem] rounded-sm transition-colors"
-                            type="button"
-                          >
-                            Select Wallet
-                          </button>
-                        );
+                <div className="flex justify-start">
+                  <button
+                    onClick={connected ? openAccountModal : openConnectModal}
+                    className={`
+                      py-3 px-6 rounded-sm font-bold text-base w-[152px]
+                      ${!connected 
+                        ? 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
+                        : 'bg-gray-800 text-gray-400'
                       }
-
-                      return (
-                        <button
-                          onClick={openAccountModal}
-                          className="bg-[#77be44] hover:bg-[#69aa3b] text-white font-bold py-3 px-[1.8rem] rounded-sm transition-colors flex items-center gap-2"
-                          type="button"
-                        >
-                          {account.displayName}
-                          {account.displayBalance ? ` (${account.displayBalance})` : ''}
-                        </button>
-                      );
-                    })()}
-                  </div>
-                  {connected && (
-                    <button
-                      onClick={openChainModal}
-                      className="bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-sm transition-colors flex items-center gap-2"
-                      type="button"
-                    >
-                      {chain.name}
-                      <ChevronDown className="h-4 w-4" />
-                    </button>
-                  )}
+                    `}
+                  >
+                    {connected ? account.displayName : 'Select Wallet'}
+                  </button>
                 </div>
               );
             }}
@@ -1375,6 +1548,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         </div>
         
         <div className="mb-4">
+          {/* Sell section */}
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Sell</span>
           </div>
@@ -1388,15 +1562,39 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             />
             {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
           </div>
-        </div>
-        <div className="flex justify-center mb-4">
-          <div className="bg-gray-800 p-2 rounded-full cursor-pointer">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
+          <div className="flex justify-between mt-2 text-sm">
+            <span className="text-gray-400">
+              {sellTokenBalance && (
+                <>Balance: {formatUnits(sellTokenBalance.value, sellTokenBalance.decimals)} {sellTokenBalance.symbol}</>
+              )}
+            </span>
+            {sellTokenUsdValue && (
+              <span className="text-gray-400">
+                {sellTokenUsdValue}
+              </span>
+            )}
           </div>
         </div>
+
+        <div className="flex justify-center mb-4">
+          <div 
+            className="bg-gray-800 p-2 rounded-full cursor-pointer hover:bg-gray-700 transition-colors"
+            onClick={() => {
+              // Add token swap functionality
+              const tempToken = sellToken;
+              const tempAmount = sellAmount;
+              setSellToken(buyToken);
+              setBuyToken(tempToken);
+              setSellAmount(buyAmount);
+              setBuyAmount(tempAmount);
+            }}
+          >
+            <ArrowUpDown className="h-6 w-6 text-gray-400" />
+          </div>
+        </div>
+
         <div className="mb-4">
+          {/* Buy section */}
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Buy</span>
           </div>
@@ -1404,14 +1602,29 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             <input
               type="number"
               value={buyAmount}
-              onChange={(e) => setBuyAmount(e.target.value)}
+              readOnly
               className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               placeholder="0"
-              readOnly
             />
             {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
           </div>
+          <div className="flex justify-end mt-2 text-sm">
+            {buyTokenUsdValue && (
+              <span className="text-gray-400">
+                {buyTokenUsdValue}
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* Add EthSlippageSettings here, just above the Swap button */}
+        <div className="mb-4">
+          <EthSlippageSettings
+            slippage={ethSlippagePercentage}
+            onSlippageChange={setEthSlippagePercentage}
+          />
+        </div>
+
         <div className="flex justify-center">
           <button
             onClick={() => {
@@ -1445,7 +1658,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           buyAmount={buyAmount}
           sellToken={sellToken}
           buyToken={buyToken}
-          slippage={ethSlippage}
+          slippage={ethSlippagePercentage}
           transactionHash={ethTransactionHash}
           containerRef={ethereumSwapContainerRef}
           transactionStatus={ethTransactionStatus}
@@ -1457,21 +1670,18 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     );
   };
 
-  // Update the formatting helper function to also handle input formatting
+  // Add this near the top of the file, with other helper functions
   const formatNumberWithCommas = (value: string) => {
     if (!value) return '';
     
-    // Remove existing commas first
-    const cleanValue = value.replace(/,/g, '');
-    
-    // Split into whole number and decimal parts
-    const [wholePart, decimalPart] = cleanValue.split('.');
+    // Split into whole and decimal parts
+    const [wholePart, decimalPart] = value.split('.');
     
     // Add commas to whole number part
     const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     
     // Return with decimal part if it exists
-    return decimalPart ? `${formattedWholePart}.${decimalPart}` : formattedWholePart;
+    return decimalPart !== undefined ? `${formattedWholePart}.${decimalPart}` : formattedWholePart;
   };
 
   // Add state for USD values
@@ -1491,19 +1701,76 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const ethereumSwapContainerRef = useRef<HTMLDivElement>(null);
   const solanaSwapContainerRef = useRef<HTMLDivElement>(null);
 
-  const renderSolanaSwapInterface = () => {
-    const isSolanaSwapDisabled = !solanaWallet.connected || !sellToken || !buyToken || !sellAmount || parseFloat(sellAmount) <= 0 || !buyAmount || parseFloat(buyAmount) <= 0 || transactionStatus === 'pending';
+  // Move the hook call to the top level
+  const solanaTokenBalance = useSolanaTokenBalance(
+    activeChain === 'solana' ? sellToken : null,
+    solanaWallet.publicKey,
+    connection
+  );
 
+  // Add this near the top of the component, with other state declarations
+  const isSolanaSwapDisabled = useMemo(() => {
+    // Check if wallet is not connected
+    if (!solanaWallet.connected || !solanaWallet.publicKey) {
+      return true;
+    }
+
+    // Check if tokens are not selected
+    if (!sellToken || !buyToken) {
+      return true;
+    }
+
+    // Check if amount is not entered or invalid
+    if (!sellAmount || isNaN(parseFloat(sellAmount)) || parseFloat(sellAmount) <= 0) {
+      return true;
+    }
+
+    // Check if transaction is pending
+    if (transactionStatus === 'pending') {
+      return true;
+    }
+
+    // Check if same token is selected for buy and sell
+    if (sellToken.address === buyToken.address) {
+      return true;
+    }
+
+    // Check if sell amount exceeds balance (if balance is available)
+    if (solanaTokenBalance !== null) {
+      const sellAmountNum = parseFloat(sellAmount);
+      // Use the imported SOL_MINT_ADDRESSES
+      const adjustedBalance = SOL_MINT_ADDRESSES.includes(sellToken.address) 
+        ? Math.max(0, solanaTokenBalance - 0.01) // Leave 0.01 SOL for fees
+        : solanaTokenBalance;
+      
+      if (sellAmountNum > adjustedBalance) {
+        return true;
+      }
+    }
+
+    return false;
+  }, [
+    solanaWallet.connected,
+    solanaWallet.publicKey,
+    sellToken,
+    buyToken,
+    sellAmount,
+    transactionStatus,
+    solanaTokenBalance
+  ]);
+
+  const [solanaSlippagePercentage, setSolanaSlippagePercentage] = useState<number>(0.5); // Default to 0.5%
+
+  // Update the renderSolanaSwapInterface function
+  const renderSolanaSwapInterface = () => {
     return (
-      <div 
-        ref={solanaSwapContainerRef} 
-        className="flex-grow bg-gray-900 rounded-lg p-4"
-      >
+      <div ref={solanaSwapContainerRef} className="flex-grow bg-gray-900 rounded-lg p-4">
         <div className="mb-4">
           <WalletButton />
         </div>
 
         <div className="mb-4">
+          {/* Sell section */}
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Sell</span>
           </div>
@@ -1512,10 +1779,17 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               type="text"
               value={formatNumberWithCommas(sellAmount)}
               onChange={(e) => {
-                // Remove commas and validate
+                // Remove commas from the input
                 const rawValue = e.target.value.replace(/,/g, '');
+                
+                // Allow empty string, numbers, and decimals
+                // This regex allows: empty string, integers, decimals, and prevents multiple dots
                 if (rawValue === '' || /^\d*\.?\d*$/.test(rawValue)) {
-                  setSellAmount(rawValue);
+                  // Prevent more than one decimal point
+                  const decimalPoints = (rawValue.match(/\./g) || []).length;
+                  if (decimalPoints <= 1) {
+                    setSellAmount(rawValue);
+                  }
                 }
               }}
               className="bg-transparent text-white text-2xl w-full outline-none"
@@ -1523,11 +1797,18 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             />
             {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
           </div>
-          {sellAmountUSD && (
-            <div className="text-right text-gray-400 text-sm mt-1">
-              {sellAmountUSD}
-            </div>
-          )}
+          <div className="flex justify-between mt-2 text-sm">
+            <span className="text-gray-400">
+              {solanaTokenBalance !== null && sellToken && (
+                <>Balance: {solanaTokenBalance.toFixed(6)} {sellToken.symbol}</>
+              )}
+            </span>
+            {sellTokenUsdValue && (
+              <span className="text-gray-400">
+                {sellTokenUsdValue}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex justify-center mb-4">
@@ -1537,6 +1818,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         </div>
 
         <div className="mb-4">
+          {/* Buy section */}
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Buy</span>
           </div>
@@ -1550,46 +1832,44 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             />
             {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
           </div>
-          {buyAmountUSD && (
-            <div className="text-right text-gray-400 text-sm mt-1">
-              {buyAmountUSD}
-            </div>
-          )}
+          <div className="flex justify-end mt-2 text-sm">
+            {buyTokenUsdValue && (
+              <span className="text-gray-400">
+                {buyTokenUsdValue}
+              </span>
+            )}
+          </div>
         </div>
 
+        {/* Keep the new SolanaSlippageSettings */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-400">Slippage Tolerance (%)</label>
-          <input
-            type="number"
-            value={slippageTolerance / 100}
-            onChange={(e) => {
-              const newValue = Math.max(0, Math.min(500, parseFloat(e.target.value) * 100));
-              setSlippageTolerance(isNaN(newValue) ? DEFAULT_SLIPPAGE_BPS : newValue);
-            }}
-            className="mt-1 block w-full rounded-md bg-gray-800 border-gray-700 text-white p-2"
-            placeholder="3.0"
-            min="0"
-            max="5"
-            step="0.1"
+          <SolanaSlippageSettings
+            slippage={solanaSlippagePercentage}
+            onSlippageChange={setSolanaSlippagePercentage}
           />
         </div>
 
-        <button 
-          onClick={solanaWallet.connected ? handleSwapClick : () => {}} // Only show swap modal if wallet is connected
-          disabled={isSolanaSwapDisabled}
-          className={`w-full py-3 rounded-lg font-semibold ${
-            isSolanaSwapDisabled
-              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-              : 'bg-purple-500 text-white hover:bg-purple-600'
-          }`}
-        >
-          {!solanaWallet.connected 
-            ? 'Connect Wallet'
-            : transactionStatus === 'pending' 
-              ? 'Swapping...' 
-              : 'Swap'
-          }
-        </button>
+        <div className="flex justify-center">
+          <button
+            onClick={() => {
+              if (solanaWallet.connected) {
+                setIsConfirmationModalOpen(true);
+              }
+            }}
+            disabled={isSolanaSwapDisabled}
+            className={`w-full py-3 rounded-lg font-semibold ${
+              isSolanaSwapDisabled
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                : 'bg-purple-500 text-white hover:bg-purple-600 transition-colors'
+            }`}
+          >
+            {!solanaWallet.connected 
+              ? 'Connect Wallet' 
+              : transactionStatus === 'pending' 
+                ? 'Swapping...' 
+                : 'Swap'}
+          </button>
+        </div>
 
         {transactionStatus !== 'idle' && (
           <div className="mt-4">
@@ -1623,7 +1903,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           buyAmount={buyAmount}
           sellToken={sellToken?.symbol || ''}
           buyToken={buyToken?.symbol || ''}
-          slippage={DEFAULT_SLIPPAGE_BPS / 100}
+          slippage={solanaSlippagePercentage} // Use the same slippage value
           transactionSignature={transactionSignature}
           containerRef={solanaSwapContainerRef}
           transactionStatus={transactionStatus}
@@ -1761,6 +2041,123 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setError(null);
   }, [activeChain]);
 
+  // Add these hooks at the top of the component
+  const { data: sellTokenBalance } = useBalance({
+    address,
+    token: sellToken?.address as `0x${string}`,
+    watch: true,
+    enabled: !!sellToken && !!address && activeChain === 'ethereum',
+  });
+
+  // Add state for USD values
+  const [sellTokenUsdValue, setSellTokenUsdValue] = useState<string>('');
+  const [buyTokenUsdValue, setBuyTokenUsdValue] = useState<string>('');
+
+  // Update the useEffect for USD values with better optimization
+  useEffect(() => {
+    const updateUsdValues = debounce(async () => {
+      try {
+        if (sellToken) {
+          const price = await fetchTokenPrice(sellToken.address, activeChain);
+          if (sellAmount && price) {
+            const usdValue = formatUsdValue(sellAmount, price);
+            setSellTokenUsdValue(usdValue);
+          }
+        }
+
+        if (buyToken && buyAmount) {
+          const price = await fetchTokenPrice(buyToken.address, activeChain);
+          if (price) {
+            const usdValue = formatUsdValue(buyAmount, price);
+            setBuyTokenUsdValue(usdValue);
+          }
+        }
+      } catch (error) {
+        console.error('Error updating USD values:', error);
+      }
+    }, 1000);
+
+    if ((sellToken && sellAmount) || (buyToken && buyAmount)) {
+      updateUsdValues();
+    }
+
+    return () => {
+      updateUsdValues.cancel();
+    };
+  }, [sellToken, buyToken, sellAmount, buyAmount, activeChain]);
+
+  // Add a separate effect for background price updates
+  useEffect(() => {
+    if (activeChain !== 'solana') return;
+
+    const fetchPrices = async () => {
+      try {
+        if (sellToken) {
+          await fetchJupiterPrice(sellToken.address);
+        }
+        if (buyToken) {
+          await fetchJupiterPrice(buyToken.address);
+        }
+      } catch (error) {
+        console.error('Error fetching Jupiter prices:', error);
+      }
+    };
+
+    // Set up an interval to refresh prices
+    const intervalId = setInterval(fetchPrices, 60000); // Refresh every minute
+
+    // Initial fetch
+    fetchPrices();
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [sellToken, buyToken, activeChain]);
+
+  // Add this near the top of the component with other state declarations
+  const isSwapDisabled = useMemo(() => {
+    // For Ethereum chain
+    if (activeChain === 'ethereum') {
+      return (
+        !isConnected || // Not connected
+        !sellToken || // No sell token selected
+        !buyToken || // No buy token selected
+        !sellAmount || // No amount entered
+        sellAmount === '0' || // Zero amount
+        isNaN(parseFloat(sellAmount)) || // Invalid amount
+        parseFloat(sellAmount) <= 0 || // Negative or zero amount
+        isSwapPending || // Transaction pending
+        sellToken.address === buyToken?.address || // Same token
+        (sellTokenBalance && parseFloat(sellAmount) > parseFloat(formatUnits(sellTokenBalance.value, sellToken.decimals))) // Insufficient balance
+      );
+    }
+    
+    // For Solana chain
+    return (
+      !solanaWallet.connected || // Not connected
+      !sellToken || // No sell token selected
+      !buyToken || // No buy token selected
+      !sellAmount || // No amount entered
+      sellAmount === '0' || // Zero amount
+      isNaN(parseFloat(sellAmount)) || // Invalid amount
+      parseFloat(sellAmount) <= 0 || // Negative or zero amount
+      transactionStatus === 'pending' || // Transaction pending
+      sellToken.address === buyToken?.address || // Same token
+      (solanaTokenBalance !== null && parseFloat(sellAmount) > solanaTokenBalance) // Insufficient balance
+    );
+  }, [
+    activeChain,
+    isConnected,
+    sellToken,
+    buyToken,
+    sellAmount,
+    isSwapPending,
+    sellTokenBalance,
+    solanaWallet.connected,
+    transactionStatus,
+    solanaTokenBalance
+  ]);
+
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
       <div className="w-full mb-4">
@@ -1778,7 +2175,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           {activeChain === 'ethereum' ? (
             <div className="flex-grow bg-gray-900 rounded-lg">
               {renderEthereumSwapInterface()}
-              <EthSlippageSettings slippage={ethSlippage} setSlippage={setEthSlippage} />
             </div>
           ) : (
             <div className="flex-grow bg-gray-900 rounded-lg relative">
@@ -1794,7 +2190,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
                 buyAmount={buyAmount}
                 sellToken={sellToken?.symbol || ''}
                 buyToken={buyToken?.symbol || ''}
-                slippage={DEFAULT_SLIPPAGE_BPS / 100}
+                slippage={solanaSlippagePercentage} // Use the same slippage value
                 transactionSignature={transactionSignature}
                 containerRef={solanaSwapContainerRef}
                 transactionStatus={transactionStatus}
@@ -1942,7 +2338,6 @@ const getAddressLookupTableAccounts = async (
     return acc;
   }, new Array<AddressLookupTableAccount>());
 };
-
 
 
 

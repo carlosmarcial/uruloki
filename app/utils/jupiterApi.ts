@@ -48,24 +48,35 @@ export const fetchJupiterQuote = async (params: {
     const normalizedInputMint = normalizeMint(params.inputMint);
     const normalizedOutputMint = normalizeMint(params.outputMint);
 
+    // Use a more conservative default slippage
+    const slippageBps = Math.min(Math.max(params.slippageBps || 100, 50), 5000);
+
     const searchParams = new URLSearchParams({
       inputMint: normalizedInputMint,
       outputMint: normalizedOutputMint,
       amount: params.amount,
-      slippageBps: (params.slippageBps || 300).toString(),
-      maxAccounts: (params.maxAccounts || 64).toString()
+      slippageBps: slippageBps.toString(),
+      maxAccounts: (params.maxAccounts || 64).toString(),
+      onlyDirectRoutes: 'false',
+      asLegacyTransaction: 'false',
+      useSharedAccounts: 'true'
     });
 
     const url = `${JUPITER_QUOTE_API_URL}?${searchParams.toString()}`;
     console.log('Fetching Jupiter quote with URL:', url);
 
     const response = await fetch(url);
+    const data = await response.json();
+    
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Jupiter quote API error: ${response.status}, ${JSON.stringify(errorData)}`);
+      throw new Error(`Jupiter quote API error: ${response.status}, ${JSON.stringify(data)}`);
     }
 
-    return await response.json();
+    // Add slippage to the response for use in swap
+    return {
+      ...data,
+      slippageBps
+    };
   } catch (error) {
     console.error('\n Error fetching Jupiter quote:', error);
     throw error;
@@ -98,21 +109,64 @@ interface SwapInstructionsResponse {
 
 export const fetchJupiterSwapInstructions = async ({ swapRequest }: SwapInstructionsRequest): Promise<SwapInstructionsResponse> => {
   try {
-    const response = await fetch(`${JUPITER_SWAP_API_URL}/swap`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(swapRequest)
-    });
+    const maxRetries = 3;
+    let lastError;
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        // Format amounts for display
+        const inputAmount = (Number(swapRequest.quoteResponse.inAmount) / Math.pow(10, swapRequest.quoteResponse.inputDecimals)).toFixed(6);
+        const outputAmount = (Number(swapRequest.quoteResponse.outAmount) / Math.pow(10, swapRequest.quoteResponse.outputDecimals)).toFixed(6);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Swap instructions API error: ${response.status}, ${errorText}`);
+        const response = await fetch(`${JUPITER_SWAP_API_URL}/swap`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...swapRequest,
+            // Update metadata structure for Phantom
+            metadata: {
+              // This is what shows up in the wallet
+              applicationName: "Uruloki",
+              // This affects how the transaction appears in the wallet
+              title: "Swap",
+              // Additional metadata that might be used
+              name: "Uruloki DEX",
+              description: `Swapped ${inputAmount} ${swapRequest.quoteResponse.inputSymbol} for ${outputAmount} ${swapRequest.quoteResponse.outputSymbol}`,
+              source: "Uruloki",
+              // Optional: only include if you have a logo
+              // logo: "https://uruloki.xyz/logo.png",
+            },
+            // Keep existing configuration
+            slippageBps: swapRequest.quoteResponse.slippageBps,
+            computeUnitPriceMicroLamports: null,
+            dynamicComputeUnitLimit: true,
+            useSharedAccounts: true,
+            asLegacyTransaction: false,
+            onlyDirectRoutes: false,
+            wrapUnwrapSOL: true,
+            maxAccounts: 64
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Swap API error: ${response.status}, ${errorText}`);
+        }
+
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error(`Attempt ${i + 1} failed:`, error);
+        lastError = error;
+        if (i < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        }
+      }
     }
-
-    const data = await response.json();
-    return data;
+    
+    throw lastError || new Error('Failed to fetch swap instructions after retries');
   } catch (error) {
     console.error('Error fetching swap instructions:', error);
     throw error;
