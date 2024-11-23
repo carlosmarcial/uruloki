@@ -89,7 +89,12 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
       setError(null);
 
       const formattedAddress = formatTokenAddress(token.address, network);
-      console.log('Fetching pool for:', { network, address: formattedAddress });
+      console.log('Fetching pool for:', { 
+        network, 
+        address: formattedAddress,
+        originalAddress: token.address,
+        symbol: token.symbol 
+      });
 
       // For ETH, use a specific URL
       if (formattedAddress === 'eth') {
@@ -430,16 +435,50 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
     const updateChart = async () => {
       if (selectedToken) {
         const network = getNetworkIdentifier(chainId);
+        console.log('Updating chart with:', { 
+          token: selectedToken, 
+          network, 
+          chainId 
+        });
+        
         try {
-          const url = await fetchGeckoTerminalUrl(selectedToken, network);
-          if (url) {
-            console.log('Setting chart URL:', url);
-            setChartUrl(url);
+          // For Solana tokens, ensure we're using the correct address format
+          if (network === 'solana') {
+            // Create a copy of the token with properly formatted address
+            const formattedToken = {
+              ...selectedToken,
+              address: selectedToken.address.replace('spl-', '') // Remove any 'spl-' prefix
+            };
+            
+            // Handle special case for native SOL
+            if (formattedToken.address === NATIVE_SOL_ADDRESS) {
+              formattedToken.address = WRAPPED_SOL_ADDRESS;
+            }
+            
+            const url = await fetchGeckoTerminalUrl(formattedToken, network);
+            if (url) {
+              console.log('Setting Solana chart URL:', url);
+              setChartUrl(url);
+              setError(null);
+            }
+          } else {
+            // Handle Ethereum and other chains as before
+            const url = await fetchGeckoTerminalUrl(selectedToken, network);
+            if (url) {
+              console.log('Setting EVM chart URL:', url);
+              setChartUrl(url);
+              setError(null);
+            }
           }
         } catch (err) {
           console.error('Error updating chart:', err);
           setError('Failed to load chart');
+          setChartUrl('');
         }
+      } else {
+        // Clear chart when no token is selected
+        setChartUrl('');
+        setError(null);
       }
     };
 
