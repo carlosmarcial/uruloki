@@ -431,3 +431,7 @@ export const TOKEN_LIST_URLS: { [chainId: number]: string } = {
   [AVALANCHE_CHAIN_ID]: 'https://tokens.coingecko.com/avalanche/all.json',
 };
 
+// Add these with your other constants
+export const JUPITER_REFERRAL_ACCOUNT = process.env.JUPITER_REFERRAL_ACCOUNT as string;
+export const JUPITER_FEE_BPS = Number(process.env.JUPITER_FEE_BPS) || 15; // 0.15% = 15 basis points
+

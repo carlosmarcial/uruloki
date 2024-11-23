@@ -5,7 +5,9 @@ import {
   JUPITER_SWAP_API_URL,
   JUPITER_SWAP_INSTRUCTIONS_API_URL,
   NATIVE_SOL_MINT,
-  WRAPPED_SOL_MINT
+  WRAPPED_SOL_MINT,
+  JUPITER_REFERRAL_ACCOUNT,
+  JUPITER_FEE_BPS
 } from '../constants';
 
 // Helper function to normalize mint addresses for Jupiter API
@@ -59,7 +61,8 @@ export const fetchJupiterQuote = async (params: {
       maxAccounts: (params.maxAccounts || 64).toString(),
       onlyDirectRoutes: 'false',
       asLegacyTransaction: 'false',
-      useSharedAccounts: 'true'
+      useSharedAccounts: 'true',
+      platformFeeBps: JUPITER_FEE_BPS.toString()
     });
 
     const url = `${JUPITER_QUOTE_API_URL}?${searchParams.toString()}`;
@@ -125,20 +128,14 @@ export const fetchJupiterSwapInstructions = async ({ swapRequest }: SwapInstruct
           },
           body: JSON.stringify({
             ...swapRequest,
-            // Update metadata structure for Phantom
+            feeAccount: JUPITER_REFERRAL_ACCOUNT,
             metadata: {
-              // This is what shows up in the wallet
               applicationName: "Uruloki",
-              // This affects how the transaction appears in the wallet
               title: "Swap",
-              // Additional metadata that might be used
               name: "Uruloki DEX",
               description: `Swapped ${inputAmount} ${swapRequest.quoteResponse.inputSymbol} for ${outputAmount} ${swapRequest.quoteResponse.outputSymbol}`,
               source: "Uruloki",
-              // Optional: only include if you have a logo
-              // logo: "https://uruloki.xyz/logo.png",
             },
-            // Keep existing configuration
             slippageBps: swapRequest.quoteResponse.slippageBps,
             computeUnitPriceMicroLamports: null,
             dynamicComputeUnitLimit: true,

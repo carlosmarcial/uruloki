@@ -2,7 +2,7 @@ import React from 'react';
 import { SolanaModal } from './SolanaModal';
 import { XCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { formatUnits } from 'viem';
-import { ETH_DEFAULT_SLIPPAGE_PERCENTAGE } from '@/app/constants';
+import { ETH_DEFAULT_SLIPPAGE_PERCENTAGE, JUPITER_FEE_BPS } from '@/app/constants';
 
 interface EthereumConfirmationModalProps {
   isOpen: boolean;
@@ -153,15 +153,22 @@ export default function EthereumConfirmationModal({
 
           {renderGasEstimate()}
 
-          <div className="bg-gray-800 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-2">
+          <div className="bg-gray-800 rounded-lg p-4 space-y-2">
+            <div className="flex justify-between items-center">
               <span className="text-gray-400">Slippage Tolerance</span>
               <span className="text-white">{slippage}%</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Uruloki Fee</span>
+              <span className="text-white">{JUPITER_FEE_BPS / 100}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Network</span>
               <span className="text-white">Ethereum</span>
             </div>
+            <p className="text-xs text-gray-500 mt-2">
+              A {JUPITER_FEE_BPS / 100}% fee is applied to help maintain and improve our services
+            </p>
           </div>
 
           {renderTransactionStatus()}
