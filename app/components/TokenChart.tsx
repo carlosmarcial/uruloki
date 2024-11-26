@@ -26,8 +26,103 @@ interface TokenAnalysis {
   error: string | null;
 }
 
+interface CachedAnalysis {
+  analysis: string;
+  timestamp: number;
+}
+
+interface AnalysisCache {
+  [key: string]: CachedAnalysis;
+}
+
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds (60 minutes * 60 seconds * 1000 milliseconds)
+
 const WRAPPED_SOL_ADDRESS = 'So11111111111111111111111111111111111111112';
 const NATIVE_SOL_ADDRESS = '11111111111111111111111111111111';
+
+const getCachedAnalysis = (tokenAddress: string, network: string): string | null => {
+  try {
+    const cache = localStorage.getItem('aiAnalysisCache');
+    if (!cache) return null;
+
+    const parsedCache: AnalysisCache = JSON.parse(cache);
+    const cacheKey = `${network}-${tokenAddress.toLowerCase()}`;
+    const cachedData = parsedCache[cacheKey];
+
+    if (!cachedData) return null;
+
+    // Check if cache has expired
+    if (Date.now() - cachedData.timestamp > CACHE_DURATION) {
+      // Remove expired cache
+      delete parsedCache[cacheKey];
+      localStorage.setItem('aiAnalysisCache', JSON.stringify(parsedCache));
+      return null;
+    }
+
+    return cachedData.analysis;
+  } catch (error) {
+    console.warn('Error reading from cache:', error);
+    return null;
+  }
+};
+
+const setCachedAnalysis = (tokenAddress: string, network: string, analysis: string) => {
+  try {
+    const cache = localStorage.getItem('aiAnalysisCache');
+    const parsedCache: AnalysisCache = cache ? JSON.parse(cache) : {};
+    const cacheKey = `${network}-${tokenAddress.toLowerCase()}`;
+
+    // Add new analysis to cache with current timestamp
+    parsedCache[cacheKey] = {
+      analysis,
+      timestamp: Date.now()
+    };
+
+    localStorage.setItem('aiAnalysisCache', JSON.stringify(parsedCache));
+  } catch (error) {
+    console.warn('Error writing to cache:', error);
+  }
+};
+
+const StreamingText = ({ text }: { text: string }) => {
+  const [displayText, setDisplayText] = useState<string[]>([]);
+  const GRADIENT_WORDS = 3; // Number of recent words to show gradient effect
+  
+  useEffect(() => {
+    const words = text.split(' ');
+    const currentDisplayed = displayText.join(' ');
+    const remainingText = text.slice(currentDisplayed.length).trim();
+    
+    if (remainingText) {
+      const newWords = remainingText.split(' ');
+      if (newWords[0]) {
+        const timer = setTimeout(() => {
+          setDisplayText(prev => [...prev, newWords[0]]);
+        }, 50); // Adjust speed as needed
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [text, displayText]);
+
+  return (
+    <div className="text-white whitespace-pre-wrap p-4">
+      {displayText.map((word, index) => {
+        const isRecent = displayText.length - index <= GRADIENT_WORDS;
+        const order = displayText.length - index;
+        
+        return (
+          <span 
+            key={index} 
+            className={isRecent ? `gradient-text gradient-${order}` : ''}
+            style={isRecent ? { animationDelay: `${(GRADIENT_WORDS - order) * 0.2}s` } : undefined}
+          >
+            {word}{' '}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
 
 const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, chainId }, ref) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -279,6 +374,19 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
   const fetchTokenAnalysis = async (token: Token, network: string) => {
     try {
       setAnalysis(prev => ({ ...prev, loading: true, error: null }));
+      
+      // Check cache first
+      const cachedAnalysis = getCachedAnalysis(token.address, network);
+      if (cachedAnalysis) {
+        console.log('Using cached analysis for', token.symbol);
+        setAnalysis({
+          analysis: cachedAnalysis,
+          loading: false,
+          error: null
+        });
+        return;
+      }
+
       const formattedAddress = formatTokenAddress(token.address, network);
 
       // Get pool data
@@ -415,7 +523,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         }
       };
 
-      // Fetch the analysis from our API with streaming
+      // When fetching from API, use streaming response
       const response = await fetch('/api/technical-analysis', {
         method: 'POST',
         headers: {
@@ -457,6 +565,9 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
             error: null
           }));
         }
+
+        // Cache the complete analysis
+        setCachedAnalysis(token.address, network, analysisText);
       }
 
     } catch (err) {
@@ -656,9 +767,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
                   ) : analysis.error ? (
                     <div className="text-red-500 p-4">{analysis.error}</div>
                   ) : (
-                    <div className="text-white whitespace-pre-wrap p-4">
-                      {analysis.analysis}
-                    </div>
+                    <StreamingText text={analysis.analysis} />
                   )}
                 </div>
               </div>
@@ -667,7 +776,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         )}
       </AnimatePresence>
 
-      {/* Add custom scrollbar styles */}
+      {/* Add gradient animation styles */}
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 8px;
@@ -693,6 +802,37 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
           scrollbar-width: thin;
           scrollbar-color: rgba(75, 85, 99, 0.8) rgba(31, 41, 55, 0.5);
         }
+
+        .gradient-text {
+          background: linear-gradient(90deg, #22c55e, #f97316);
+          background-size: 200% auto;
+          color: transparent;
+          -webkit-background-clip: text;
+          background-clip: text;
+          display: inline-block;
+          animation: gradient 2s ease-in-out forwards;
+        }
+
+        @keyframes gradient {
+          0% {
+            background-position: 0% 50%;
+            opacity: 0.7;
+          }
+          50% {
+            background-position: 100% 50%;
+            opacity: 1;
+          }
+          100% {
+            background-position: 0% 50%;
+            opacity: 1;
+            background: none;
+            color: white;
+          }
+        }
+
+        .gradient-1 { opacity: 1; }
+        .gradient-2 { opacity: 0.9; }
+        .gradient-3 { opacity: 0.8; }
       `}</style>
     </div>
   );
