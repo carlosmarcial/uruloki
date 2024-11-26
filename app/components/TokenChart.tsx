@@ -1,6 +1,7 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import { X } from 'lucide-react';
 
 interface Token {
   address: string;
@@ -32,6 +33,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartUrl, setChartUrl] = useState<string>('');
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysis, setAnalysis] = useState<TokenAnalysis>({
@@ -50,11 +52,13 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
       case 56:
         return 'bsc';
       case 137:
-        return 'polygon';
+        return 'polygon_pos';
       case 42161:
         return 'arbitrum';
       case 43114:
-        return 'avalanche';
+        return 'avax';
+      case 10:
+        return 'optimism';
       default:
         return 'eth';
     }
@@ -98,63 +102,91 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
 
       // For ETH, use a specific URL
       if (formattedAddress === 'eth') {
-        return `https://www.geckoterminal.com/eth/pools/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
+        return `https://www.geckoterminal.com/eth/pools/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2?embed=1&info=0&swaps=0&theme=dark&trades=0`;
       }
 
       // For Solana tokens
       if (network === 'solana') {
-        // Special handling for SOL token
         if (token.address === NATIVE_SOL_ADDRESS || token.symbol.toUpperCase() === 'SOL') {
-          // Use a known liquid Wrapped SOL pool
-          return `https://www.geckoterminal.com/solana/pools/${WRAPPED_SOL_ADDRESS}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
-        }
-
-        try {
-          // First try to get token pools
-          const tokenResponse = await axios.get(
-            `https://api.geckoterminal.com/api/v2/networks/solana/tokens/${formattedAddress}`,
-            {
-              headers: {
-                'Accept': 'application/json'
-              }
-            }
-          );
-
-          // If we have pools data, get the most liquid pool
-          if (tokenResponse.data?.data?.relationships?.top_pools?.data?.[0]?.id) {
-            const poolId = tokenResponse.data.data.relationships.top_pools.data[0].id;
-            const [networkId, poolAddress] = poolId.split('_');
-            return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
-          }
-        } catch (err) {
-          console.warn('Token info fetch failed:', err);
-        }
-
-        // Fallback to searching pools
-        try {
-          const poolsResponse = await axios.get(
-            `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${formattedAddress}/pools?page=1&limit=1`,
-            {
-              headers: {
-                'Accept': 'application/json'
-              }
-            }
-          );
-
-          if (poolsResponse.data?.data?.[0]?.id) {
-            const [networkId, poolAddress] = poolsResponse.data.data[0].id.split('_');
-            return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
-          }
-        } catch (err) {
-          console.warn('Pools search failed:', err);
-          throw new Error('No trading pools found for this token');
+          return `https://www.geckoterminal.com/solana/pools/${WRAPPED_SOL_ADDRESS}?embed=1&info=0&swaps=0&theme=dark&trades=0`;
         }
       }
 
-      // For other networks, continue with existing logic
+      // Special handling for Arbitrum
+      if (network === 'arbitrum') {
+        try {
+          // First try to get pools for the token
+          const poolsResponse = await axios.get(
+            `https://api.geckoterminal.com/api/v2/networks/arbitrum/tokens/${formattedAddress}/pools`,
+            {
+              params: {
+                page: 1,
+                limit: 100,
+                order: 'h24_volume_usd_desc'
+              },
+              headers: {
+                'Accept': 'application/json'
+              }
+            }
+          );
+
+          if (poolsResponse.data?.data?.[0]) {
+            const pool = poolsResponse.data.data[0];
+            const poolAddress = pool.attributes?.address;
+            if (poolAddress) {
+              console.log('Found Arbitrum pool:', {
+                poolAddress,
+                poolId: pool.id,
+                name: pool.attributes?.name
+              });
+              return `https://www.geckoterminal.com/arbitrum/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0`;
+            }
+          }
+        } catch (err) {
+          console.warn('Arbitrum pools lookup failed:', err);
+        }
+      }
+
+      // For all other networks
       try {
         const poolsResponse = await axios.get(
-          `https://api.geckoterminal.com/api/v2/search/pools?query=${formattedAddress}&network=${network}`,
+          `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${formattedAddress}/pools`,
+          {
+            params: {
+              page: 1,
+              limit: 100,
+              order: 'h24_volume_usd_desc',
+              include: 'base_token,quote_token'
+            },
+            headers: {
+              'Accept': 'application/json'
+            }
+          }
+        );
+
+        if (poolsResponse.data?.data?.[0]) {
+          const pool = poolsResponse.data.data[0];
+          const poolAddress = pool.attributes?.address;
+          
+          if (poolAddress) {
+            console.log('Found pool:', {
+              network,
+              poolAddress,
+              poolId: pool.id,
+              name: pool.attributes?.name
+            });
+            
+            return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0`;
+          }
+        }
+      } catch (err) {
+        console.warn('Pools lookup failed:', err);
+      }
+
+      // If direct pool lookup fails, try getting token info
+      try {
+        const tokenResponse = await axios.get(
+          `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${formattedAddress}`,
           {
             headers: {
               'Accept': 'application/json'
@@ -162,18 +194,25 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
           }
         );
 
-        if (poolsResponse.data?.data?.[0]?.attributes?.address) {
-          const poolAddress = poolsResponse.data.data[0].attributes.address;
-          return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0&stats=0`;
+        if (tokenResponse.data?.data?.relationships?.top_pools?.data?.[0]) {
+          const pool = tokenResponse.data.data.relationships.top_pools.data[0];
+          const poolAddress = pool.attributes?.address || pool.id.split('_')[1];
+          
+          if (poolAddress) {
+            console.log('Found pool from token info:', {
+              network,
+              poolAddress,
+              poolId: pool.id
+            });
+            
+            return `https://www.geckoterminal.com/${network}/pools/${poolAddress}?embed=1&info=0&swaps=0&theme=dark&trades=0`;
+          }
         }
       } catch (err) {
-        console.warn('Pool search failed:', err);
-        throw new Error('No trading pools found for this token');
+        console.warn('Token info lookup failed:', err);
       }
 
-      // If we get here, we couldn't find any pools
       throw new Error('No trading pools found for this token');
-
     } catch (err) {
       console.error('Error fetching GeckoTerminal data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load chart');
@@ -323,11 +362,8 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
           change24h: (() => {
             const volume24h = Number(poolDetails.volume_usd?.h24 || 0);
             const volume6h = Number(poolDetails.volume_usd?.h6 || 0);
-            // Normalize 6h volume to 24h equivalent for fair comparison
-            const normalized6hVolume = volume6h * 4; // multiply by 4 to get 24h equivalent
-            
+            const normalized6hVolume = volume6h * 4;
             if (normalized6hVolume === 0) return '0.00%';
-            
             const percentageChange = ((volume24h - normalized6hVolume) / normalized6hVolume * 100);
             return `${percentageChange.toFixed(2)}%`;
           })(),
@@ -379,31 +415,49 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         }
       };
 
-      console.log('Volume data:', {
-        volume24h: poolDetails.volume_usd?.h24,
-        volume6h: poolDetails.volume_usd?.h6,
-        volume1h: poolDetails.volume_usd?.h1,
-        calculatedChange: marketData.volume.change24h
-      });
-
-      console.log('Market data being sent to API:', JSON.stringify(marketData.technical, null, 2));
-
-      // Fetch the analysis from our API
-      const analysisResponse = await axios.post('/api/technical-analysis', {
-        token: {
-          name: token.name,
-          symbol: token.symbol,
-          address: formattedAddress,
-          network: networkId
+      // Fetch the analysis from our API with streaming
+      const response = await fetch('/api/technical-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         },
-        marketData
+        body: JSON.stringify({
+          token: {
+            name: token.name,
+            symbol: token.symbol,
+            address: formattedAddress,
+            network: networkId
+          },
+          marketData
+        })
       });
 
-      setAnalysis({
-        analysis: analysisResponse.data.analysis,
-        loading: false,
-        error: null
-      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch analysis');
+      }
+
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let analysisText = '';
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          analysisText += chunk;
+          
+          // Update the analysis state with each chunk
+          setAnalysis(prev => ({
+            ...prev,
+            analysis: analysisText,
+            loading: false,
+            error: null
+          }));
+        }
+      }
 
     } catch (err) {
       console.error('Error fetching analysis:', err);
@@ -518,7 +572,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
   }
 
   return (
-    <div className="w-full h-full relative">
+    <div ref={chartContainerRef} className="w-full h-full relative">
       {/* AI Analysis Button */}
       <button
         onClick={() => {
@@ -551,38 +605,95 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
 
       {/* Analysis Modal */}
       <AnimatePresence>
-        {showAnalysisModal && (
+        {showAnalysisModal && chartContainerRef.current && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black bg-opacity-90 z-20 p-6"
+            className="absolute inset-0 z-50"
+            style={{
+              width: chartContainerRef.current.offsetWidth,
+              height: chartContainerRef.current.offsetHeight
+            }}
           >
-            <div className="relative w-full h-full bg-gray-900 rounded-lg p-6 overflow-auto">
-              <button
-                onClick={() => setShowAnalysisModal(false)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
-              
-              <h2 className="text-xl font-bold text-white mb-4">
-                AI Technical Analysis for {selectedToken?.symbol}
-              </h2>
-
-              {analysis.loading ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            {/* Backdrop with blur */}
+            <div 
+              className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+              onClick={() => setShowAnalysisModal(false)}
+            />
+            
+            {/* Modal Content */}
+            <div className="absolute inset-0 bg-gray-900/95 rounded-lg backdrop-blur-sm">
+              <div className="relative w-full h-full flex flex-col p-6">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    {selectedToken?.logoURI && (
+                      <img 
+                        src={selectedToken.logoURI} 
+                        alt={`${selectedToken.symbol} logo`}
+                        className="w-8 h-8 rounded-full"
+                      />
+                    )}
+                    <h2 className="text-xl font-bold text-white">
+                      AI Technical Analysis for {selectedToken?.symbol}
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => setShowAnalysisModal(false)}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
                 </div>
-              ) : analysis.error ? (
-                <div className="text-red-500">{analysis.error}</div>
-              ) : (
-                <div className="text-white whitespace-pre-wrap">{analysis.analysis}</div>
-              )}
+
+                {/* Content Area with Custom Scrollbar */}
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                  {analysis.loading ? (
+                    <div className="flex items-center justify-center h-64">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+                    </div>
+                  ) : analysis.error ? (
+                    <div className="text-red-500 p-4">{analysis.error}</div>
+                  ) : (
+                    <div className="text-white whitespace-pre-wrap p-4">
+                      {analysis.analysis}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Add custom scrollbar styles */}
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(31, 41, 55, 0.5);
+          border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(75, 85, 99, 0.8);
+          border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(107, 114, 128, 0.8);
+        }
+
+        /* For Firefox */
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(75, 85, 99, 0.8) rgba(31, 41, 55, 0.5);
+        }
+      `}</style>
     </div>
   );
 });
