@@ -38,13 +38,18 @@ export const API_QUOTE_URL = '/api/quote';
 export const API_SWAP_PRICE_URL = '/api/swap-price';
 export const TOKEN_LIST_URL = 'https://tokens.coingecko.com/uniswap/all.json';
 
-// 0x API Base URLs
+// 0x API Base URLs - in v2, all chains use the same base URL
 export const ZEROX_API_URLS: { [chainId: number]: string } = {
   [ETHEREUM_CHAIN_ID]: 'https://api.0x.org',
-  [POLYGON_CHAIN_ID]: 'https://polygon.api.0x.org',
-  [OPTIMISM_CHAIN_ID]: 'https://optimism.api.0x.org',
-  [ARBITRUM_CHAIN_ID]: 'https://arbitrum.api.0x.org',
-  [AVALANCHE_CHAIN_ID]: 'https://avalanche.api.0x.org',
+  [POLYGON_CHAIN_ID]: 'https://api.0x.org',
+  [OPTIMISM_CHAIN_ID]: 'https://api.0x.org',
+  [ARBITRUM_CHAIN_ID]: 'https://api.0x.org',
+  [AVALANCHE_CHAIN_ID]: 'https://api.0x.org',
+  [BSC_CHAIN_ID]: 'https://api.0x.org',
+  [BASE_CHAIN_ID]: 'https://api.0x.org',
+  [LINEA_CHAIN_ID]: 'https://api.0x.org',
+  [MANTLE_CHAIN_ID]: 'https://api.0x.org',
+  [SCROLL_CHAIN_ID]: 'https://api.0x.org',
 };
 
 // Add API versions for different chains
@@ -437,4 +442,31 @@ export const JUPITER_FEE_BPS = Number(process.env.JUPITER_FEE_BPS) || 15; // 0.1
 
 // Add these new constants
 export const ALLOWANCE_HOLDER_ADDRESS = '0x0000000000001fF3684f28c67538d4D072C22734';
+
+// Add Arbitrum token addresses
+export const ARBITRUM_WETH = '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1';
+export const ARBITRUM_USDC = '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8';
+export const ARBITRUM_USDT = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9';
+export const ARBITRUM_DAI = '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1';
+
+// Add Arbitrum token list
+export const ARBITRUM_TOKENS: Token[] = [
+  {
+    chainId: ARBITRUM_CHAIN_ID,
+    name: "Ethereum",
+    symbol: "ETH",
+    decimals: 18,
+    address: ETH_ADDRESS,
+    logoURI: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+  },
+  {
+    chainId: ARBITRUM_CHAIN_ID,
+    name: "Wrapped Ether",
+    symbol: "WETH",
+    decimals: 18,
+    address: ARBITRUM_WETH,
+    logoURI: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2/logo.png",
+  },
+  // Add more Arbitrum tokens as needed
+];
 
