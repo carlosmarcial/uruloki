@@ -1,28 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const { sellToken, buyToken, sellAmount } = await request.json();
+    const { searchParams } = new URL(request.url);
+    const sellToken = searchParams.get('sellToken');
+    const buyToken = searchParams.get('buyToken');
+    const sellAmount = searchParams.get('sellAmount');
+    const chainId = searchParams.get('chainId');
+    const taker = searchParams.get('taker');
+    const slippageBps = searchParams.get('slippageBps');
 
-    console.log('Price API called with params:', { sellToken, buyToken, sellAmount });
+    console.log('Price API called with params:', { 
+      sellToken, 
+      buyToken, 
+      sellAmount, 
+      chainId, 
+      taker,
+      slippageBps
+    });
 
-    if (!sellToken || !buyToken || !sellAmount || parseFloat(sellAmount) === 0) {
+    if (!sellToken || !buyToken || !sellAmount || !chainId || !taker) {
       return NextResponse.json({ 
         error: 'Invalid or missing parameters',
-        details: { sellToken, buyToken, sellAmount }
+        details: { sellToken, buyToken, sellAmount, chainId, taker }
       }, { status: 400 });
     }
 
-    const response = await axios.get(`https://api.0x.org/swap/v1/price`, {
+    // Format tokens - use WETH for ETH
+    const formattedSellToken = sellToken === 'ETH' ? 'WETH' : sellToken;
+    const formattedBuyToken = buyToken === 'ETH' ? 'WETH' : buyToken;
+
+    const response = await axios.get(`https://api.0x.org/swap/permit2/price`, {
       params: {
-        sellToken,
-        buyToken,
+        sellToken: formattedSellToken,
+        buyToken: formattedBuyToken,
         sellAmount,
+        chainId: Number(chainId),
+        taker,
+        slippageBps: Number(slippageBps)
       },
       headers: {
-        '0x-api-key': process.env.NEXT_PUBLIC_ZEROEX_API_KEY,
-      },
+        '0x-api-key': process.env.ZEROX_API_KEY,
+        '0x-version': 'v2'
+      }
     });
 
     console.log('0x API price response:', response.data);
@@ -32,49 +53,8 @@ export async function POST(request: NextRequest) {
     if (axios.isAxiosError(error) && error.response) {
       return NextResponse.json({ 
         error: 'Error from 0x API',
-        details: error.response.data 
-      }, { status: error.response.status });
-    }
-    return NextResponse.json({ error: 'Failed to fetch price' }, { status: 500 });
-  }
-}
-
-// Keep the GET method for backwards compatibility or remove if not needed
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const sellToken = searchParams.get('sellToken');
-  const buyToken = searchParams.get('buyToken');
-  const sellAmount = searchParams.get('sellAmount');
-
-  console.log('Price API called with params:', { sellToken, buyToken, sellAmount });
-
-  if (!sellToken || !buyToken || !sellAmount || parseFloat(sellAmount) === 0) {
-    return NextResponse.json({ 
-      error: 'Invalid or missing parameters',
-      details: { sellToken, buyToken, sellAmount }
-    }, { status: 400 });
-  }
-
-  try {
-    const response = await axios.get(`https://api.0x.org/swap/v1/price`, {
-      params: {
-        sellToken,
-        buyToken,
-        sellAmount,
-      },
-      headers: {
-        '0x-api-key': process.env.NEXT_PUBLIC_ZEROEX_API_KEY,
-      },
-    });
-
-    console.log('0x API price response:', response.data);
-    return NextResponse.json(response.data);
-  } catch (error) {
-    console.error('Error fetching price:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      return NextResponse.json({ 
-        error: 'Error from 0x API',
-        details: error.response.data 
+        details: error.response.data,
+        status: error.response.status
       }, { status: error.response.status });
     }
     return NextResponse.json({ error: 'Failed to fetch price' }, { status: 500 });

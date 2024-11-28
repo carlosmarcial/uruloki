@@ -1,49 +1,53 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const sellToken = searchParams.get('sellToken');
-  const buyToken = searchParams.get('buyToken');
-  const sellAmount = searchParams.get('sellAmount');
-  const takerAddress = searchParams.get('takerAddress');
-
-  console.log('Quote API called with params:', { sellToken, buyToken, sellAmount, takerAddress });
-
-  if (!sellToken || !buyToken || !sellAmount || !takerAddress || parseFloat(sellAmount) === 0) {
-    return NextResponse.json({ 
-      error: 'Invalid or missing parameters',
-      details: { sellToken, buyToken, sellAmount, takerAddress }
-    }, { status: 400 });
-  }
-
+export async function GET(request: NextRequest) {
   try {
-    const response = await axios.get(`https://api.0x.org/swap/v1/quote`, {
+    const { searchParams } = new URL(request.url);
+    const sellToken = searchParams.get('sellToken');
+    const buyToken = searchParams.get('buyToken');
+    const sellAmount = searchParams.get('sellAmount');
+    const taker = searchParams.get('taker');
+    const chainId = searchParams.get('chainId');
+    const slippageBps = searchParams.get('slippageBps');
+
+    console.log('Quote API called with params:', { 
+      sellToken, 
+      buyToken, 
+      sellAmount, 
+      taker,
+      chainId,
+      slippageBps
+    });
+
+    if (!sellToken || !buyToken || !sellAmount || !taker || !chainId) {
+      return NextResponse.json({ 
+        error: 'Invalid or missing parameters',
+        details: { sellToken, buyToken, sellAmount, taker, chainId }
+      }, { status: 400 });
+    }
+
+    // Format tokens - use WETH for ETH
+    const formattedSellToken = sellToken === 'ETH' ? 'WETH' : sellToken;
+    const formattedBuyToken = buyToken === 'ETH' ? 'WETH' : buyToken;
+
+    const response = await axios.get(`https://api.0x.org/swap/permit2/quote`, {
       params: {
-        sellToken,
-        buyToken,
+        sellToken: formattedSellToken,
+        buyToken: formattedBuyToken,
         sellAmount,
-        takerAddress,
-        slippagePercentage: 0.01, // 1% slippage tolerance
+        taker,
+        chainId: Number(chainId),
+        slippageBps: Number(slippageBps)
       },
       headers: {
-        '0x-api-key': process.env.NEXT_PUBLIC_ZEROEX_API_KEY,
-      },
+        '0x-api-key': process.env.ZEROX_API_KEY,
+        '0x-version': 'v2'
+      }
     });
 
     console.log('0x API quote response:', response.data);
-    
-    // Extract gas estimation from the response
-    const gasEstimation = {
-      gasPrice: response.data.gasPrice,
-      estimatedGas: response.data.estimatedGas,
-      estimatedGasPrice: response.data.estimatedGasPrice,
-    };
-
-    return NextResponse.json({
-      ...response.data,
-      gasEstimation
-    });
+    return NextResponse.json(response.data);
   } catch (error) {
     console.error('Error fetching quote:', error);
     if (axios.isAxiosError(error) && error.response) {

@@ -1,8 +1,17 @@
 import axios from 'axios';
 import { retry } from './retry';
 
+const CACHE_DURATION = 60000; // 1 minute
+const priceCache = new Map<string, { price: number; timestamp: number }>();
+
 export const fetchTokenPrice = async (tokenAddress: string, chain: string) => {
   try {
+    // Check cache first
+    const cached = priceCache.get(tokenAddress);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.price;
+    }
+
     // Use Jupiter API for Solana tokens
     if (chain === 'solana') {
       const response = await axios.get('https://price.jup.ag/v4/price', {
@@ -12,37 +21,47 @@ export const fetchTokenPrice = async (tokenAddress: string, chain: string) => {
       });
       
       if (response.data?.data?.[tokenAddress]?.price) {
-        return response.data.data[tokenAddress].price;
+        const price = response.data.data[tokenAddress].price;
+        priceCache.set(tokenAddress, { price, timestamp: Date.now() });
+        return price;
       }
       return 0;
     }
 
-    // Use CoinGecko for Ethereum tokens
-    const response = await retry(
-      async () => axios.get('/api/coingecko', {
-        params: {
-          endpoint: 'simple/token_price/ethereum',
-          contract_addresses: tokenAddress,
-          vs_currencies: 'usd'
+    // For Ethereum tokens, use cached price if CoinGecko fails
+    try {
+      const response = await retry(
+        async () => axios.get('/api/coingecko', {
+          params: {
+            endpoint: 'simple/token_price/ethereum',
+            contract_addresses: tokenAddress,
+            vs_currencies: 'usd'
+          }
+        }),
+        {
+          retries: 2,
+          minTimeout: 2000,
+          factor: 2
         }
-      }),
-      {
-        retries: 2,
-        minTimeout: 2000,
-        factor: 2
-      }
-    );
+      );
 
-    if (response.data.error) {
-      console.warn('Price fetch warning:', response.data.error);
-      return 0;
+      if (response.data[tokenAddress.toLowerCase()]?.usd) {
+        const price = response.data[tokenAddress.toLowerCase()].usd;
+        priceCache.set(tokenAddress, { price, timestamp: Date.now() });
+        return price;
+      }
+    } catch (error) {
+      console.warn('CoinGecko API error, using cached price if available:', error);
+      if (cached) {
+        return cached.price;
+      }
     }
 
-    const price = response.data[tokenAddress.toLowerCase()]?.usd;
-    return price || 0;
+    return 0;
   } catch (error: any) {
     console.error('Error fetching token price:', error);
-    return 0;
+    // Return cached price if available, otherwise 0
+    return priceCache.get(tokenAddress)?.price || 0;
   }
 };
 

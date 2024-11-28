@@ -445,7 +445,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       const hash = await walletClient.writeContract({
         ...tokenContract,
         functionName: 'approve',
-        args: [allowanceTarget as `0x${string}`, MAX_UINT256],
+        args: [allowanceTarget as `0x${string}`, MAX_ALLOWANCE],
       });
 
       console.log('Approval transaction submitted:', hash);
@@ -460,7 +460,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       setNeedsAllowance(false);
       
       // Refetch quote after approval
-      await fetchQuote();
+      await updateBuyAmount();
 
     } catch (error) {
       console.error('Error approving token:', error);
@@ -529,41 +529,45 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   // Update the fetchQuote function
-  const fetchQuote = async () => {
+  const fetchQuote = useCallback(async () => {
     try {
-      const sellTokenAddress = sellToken?.address === ETH_ADDRESS ? 
-        'ETH' : sellToken?.address;
-      const buyTokenAddress = buyToken?.address === ETH_ADDRESS ? 
-        'ETH' : buyToken?.address;
+      if (!sellToken || !buyToken || !sellAmount || !address) {
+        throw new Error('Missing required parameters for quote');
+      }
 
-      console.log('Fetching quote with params:', {
+      const sellAmountInBaseUnits = parseUnits(
+        sellAmount, 
+        sellToken.decimals
+      ).toString();
+
+      const sellTokenAddress = sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? 
+        'ETH' : sellToken.address;
+      const buyTokenAddress = buyToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? 
+        'ETH' : buyToken.address;
+
+      console.log('Using slippage value for quote:', ethSlippage, '%');
+
+      const params = {
         chainId,
         sellToken: sellTokenAddress,
         buyToken: buyTokenAddress,
-        sellAmount: parseUnits(sellAmount, sellToken?.decimals || 18).toString(),
+        sellAmount: sellAmountInBaseUnits,
         takerAddress: address,
-      });
+        slippagePercentage: ethSlippage.toString() // Pass the raw percentage
+      };
+
+      console.log('Full quote request params:', params);
 
       const response = await axios.get('/api/swap-price', {
-        params: {
-          chainId,
-          sellToken: sellTokenAddress,
-          buyToken: buyTokenAddress,
-          sellAmount: parseUnits(sellAmount, sellToken?.decimals || 18).toString(),
-          takerAddress: address,
-        }
+        params,
       });
-
-      if (!response.data?.to || !response.data?.data) {
-        throw new Error(`Invalid quote response: ${JSON.stringify(response.data)}`);
-      }
 
       return response.data;
     } catch (error) {
       console.error('Error fetching quote:', error);
       throw error;
     }
-  };
+  }, [sellToken, buyToken, sellAmount, address, ethSlippage, chainId]);
 
   // Add this function to check and set allowance
   const checkAndSetAllowance = async (
@@ -950,19 +954,62 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
 
+  // Add this state declaration at the top of the component with other states
+  const [currentSlippage, setCurrentSlippage] = useState(0.5);
+
+  // Update the slippage handler
+  const handleSlippageChange = (newSlippage: number) => {
+    console.log('Setting new slippage:', newSlippage, '%');
+    setCurrentSlippage(newSlippage);
+    setEthSlippagePercentage(newSlippage);
+    // Trigger a new quote update when slippage changes
+    debouncedUpdateBuyAmount();
+  };
+
+  // Move this state declaration up, before it's used
+  const [ethSlippagePercentage, setEthSlippagePercentage] = useState<number>(0.5);
+
+  // Now the updateBuyAmount function can use ethSlippagePercentage
   const updateBuyAmount = useCallback(async () => {
     if (sellToken && buyToken && sellAmount && parseFloat(sellAmount) > 0) {
       setIsLoadingPrice(true);
       try {
         if (activeChain === 'ethereum') {
-          // Get proper addresses for native tokens
-          const sellTokenAddress = sellToken.address === '0x0000000000000000000000000000000000001010' 
-            ? NATIVE_TOKEN_ADDRESS 
-            : sellToken.address;
+          // Verify tokens are from the current chain
+          if (sellToken.chainId !== chainId || buyToken.chainId !== chainId) {
+            console.error('Token chain mismatch:', { chainId, sellToken, buyToken });
+            setBuyAmount('');
+            setSwapMessage('Selected tokens must be from the current chain');
+            return;
+          }
+
+          const sellTokenAddress = sellToken.address === ETH_ADDRESS ? 
+            'ETH' : sellToken.address;
           
-          const buyTokenAddress = buyToken.address === '0x0000000000000000000000000000000000001010'
-            ? NATIVE_TOKEN_ADDRESS
-            : buyToken.address;
+          const buyTokenAddress = buyToken.address === ETH_ADDRESS ?
+            'ETH' : buyToken.address;
+
+          const slippageDecimal = ethSlippagePercentage / 100;
+          console.log('Using slippage for quote:', slippageDecimal);
+
+          // Check if approval is needed for non-ETH tokens
+          if (sellTokenAddress !== 'ETH') {
+            const exchangeProxyAddress = getExchangeProxyAddress(chainId);
+            const currentAllowance = await publicClient.readContract({
+              address: sellToken.address as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: 'allowance',
+              args: [address as `0x${string}`, exchangeProxyAddress as `0x${string}`],
+            });
+
+            const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
+            if (currentAllowance < sellAmountBigInt) {
+              setNeedsAllowance(true);
+              setAllowanceTarget(exchangeProxyAddress);
+              console.log('Token approval needed');
+              return;
+            }
+          }
 
           const response = await axios.get(API_SWAP_PRICE_URL, {
             params: {
@@ -973,27 +1020,19 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               takerAddress: address,
               affiliateAddress: FEE_RECIPIENT,
               affiliateFee: AFFILIATE_FEE,
+              slippagePercentage: slippageDecimal.toString()
             }
           });
-          setBuyAmount(formatUnits(response.data.buyAmount, buyToken.decimals));
-        } else if (activeChain === 'solana') {
-          // Solana price fetching logic
-          const inputMint = getInputMint(sellToken.address);
-          const outputMint = getOutputMint(buyToken.address);
-          const amount = (parseFloat(sellAmount) * Math.pow(10, sellToken.decimals)).toString();
           
-          const quoteResponse = await fetchJupiterQuote({
-            inputMint,
-            outputMint,
-            amount,
-            slippageBps: slippageTolerance,
+          console.log('Quote response:', {
+            sellAmount,
+            buyAmount: response.data.buyAmount,
+            slippage: ethSlippagePercentage,
+            slippageDecimal
           });
-          
-          if (quoteResponse.outAmount) {
-            setBuyAmount(formatTokenAmount(quoteResponse.outAmount, buyToken.decimals));
-          } else {
-            throw new Error('Invalid quote response');
-          }
+
+          setBuyAmount(formatUnits(response.data.buyAmount, buyToken.decimals));
+          setSwapMessage('');
         }
       } catch (error) {
         console.error('Error fetching quote:', error);
@@ -1005,7 +1044,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     } else {
       setBuyAmount('');
     }
-  }, [sellToken, buyToken, sellAmount, slippageTolerance, activeChain, chainId, address]);
+  }, [sellToken, buyToken, sellAmount, ethSlippagePercentage, activeChain, chainId, address, publicClient]);
 
   const debouncedUpdateBuyAmount = useCallback(debounce(updateBuyAmount, 500), [updateBuyAmount]);
 
@@ -1264,7 +1303,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   ): Promise<AddressLookupTableAccount[]> => {
     const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
       keys.map((key) => new PublicKey(key))
-    );
+    ); // Remove the extra parenthesis here
 
     return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
       const addressLookupTableAddress = keys[index];
@@ -1425,7 +1464,18 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  // Remove any existing handleEthereumSwap function and replace with this:
+  // Add this function to get price first
+  const getPrice = async (params: any) => {
+    try {
+      const response = await axios.get('/api/price', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Error getting price:', error);
+      throw error;
+    }
+  };
+
+  // Update handleEthereumSwap to use both endpoints
   const handleEthereumSwap = async (): Promise<void> => {
     if (!sellToken || !buyToken || !sellAmount || !address) {
       throw new Error('Missing required parameters');
@@ -1433,29 +1483,104 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
     try {
       setEthTransactionStatus('pending');
+      
+      const sellAmountInBaseUnits = parseUnits(
+        sellAmount, 
+        sellToken.decimals
+      ).toString();
 
-      // Get quote first
-      const quote = await fetchQuote();
-      console.log('Quote received:', quote);
+      const validatedSlippage = Math.min(Math.max(ethSlippagePercentage, 0.1), 50);
+      const slippageBps = Math.round(validatedSlippage * 100);
 
-      // Check and handle Permit2 allowance if needed
+      // First check if we need to approve tokens for Permit2
       if (sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
-        await handleTokenApproval();
-        console.log('Token approval confirmed');
+        const currentAllowance = await publicClient.readContract({
+          address: sellToken.address as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'allowance',
+          args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`],
+        });
+
+        const sellAmountBigInt = BigInt(sellAmountInBaseUnits);
+        
+        if (currentAllowance < sellAmountBigInt) {
+          console.log('Approving Permit2...');
+          const { request } = await publicClient.simulateContract({
+            address: sellToken.address as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [PERMIT2_ADDRESS, MaxUint256],
+            account: address,
+          });
+
+          const hash = await writeContract(request);
+          await waitForTransactionReceipt(config, { hash });
+          console.log('Permit2 approved');
+        }
       }
 
-      const txData = quote.permit2?.eip712 
-        ? await handlePermit2Signature(quote)
-        : quote.data;
-
-      const txParams = {
-        to: quote.to as `0x${string}`,
-        data: txData as `0x${string}`,
-        value: BigInt(quote.value || '0'),
-        chainId,
+      // Get quote with Permit2
+      const params = {
+        chainId: Number(chainId),
+        sellToken: sellToken.address === ETH_ADDRESS ? 'ETH' : sellToken.address,
+        buyToken: buyToken.address === ETH_ADDRESS ? 'ETH' : buyToken.address,
+        sellAmount: sellAmountInBaseUnits,
+        taker: address,
+        slippageBps
       };
 
-      console.log('Sending transaction with params:', txParams);
+      console.log('Requesting quote with params:', params);
+
+      const quoteResponse = await axios.get('/api/quote', { params });
+      const quote = quoteResponse.data;
+      
+      console.log('Quote received:', quote);
+
+      if (!quote.transaction) {
+        throw new Error('No transaction data in quote response');
+      }
+
+      // Handle Permit2 signature if needed
+      let txData = quote.transaction.data;
+      if (quote.permit2?.eip712) {
+        console.log('Signing Permit2 message...');
+        const signature = await signTypedDataAsync(quote.permit2.eip712);
+        
+        const MAGIC_CALLDATA_STRING = "f".repeat(130);
+        if (txData.includes(MAGIC_CALLDATA_STRING)) {
+          txData = txData.replace(
+            MAGIC_CALLDATA_STRING, 
+            signature.slice(2)
+          ) as `0x${string}`;
+        } else {
+          const signatureLengthInHex = numberToHex(size(signature), {
+            signed: false,
+            size: 32,
+          });
+          txData = concat([
+            txData, 
+            signatureLengthInHex, 
+            signature
+          ]) as `0x${string}`;
+        }
+      }
+
+      // Prepare transaction parameters
+      const txParams = {
+        to: quote.transaction.to as `0x${string}`,
+        data: txData,
+        value: BigInt(quote.transaction.value || '0'),
+        chainId: Number(chainId),
+        gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
+        gasPrice: quote.transaction.gasPrice ? BigInt(quote.transaction.gasPrice) : undefined,
+      };
+
+      console.log('Sending transaction with params:', {
+        ...txParams,
+        value: txParams.value.toString(),
+        gas: txParams.gas?.toString(),
+        gasPrice: txParams.gasPrice?.toString(),
+      });
 
       const hash = await sendTransactionAsync(txParams);
       console.log('Transaction submitted:', hash);
@@ -1465,8 +1590,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         hash,
         confirmations: 1,
       });
-      
-      console.log('Transaction receipt:', receipt);
       
       if (receipt.status === 'success') {
         setEthTransactionStatus('success');
@@ -1487,14 +1610,80 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  // Add this helper function to handle Permit2 signature
+  // Update the useEffect for price updates
+  useEffect(() => {
+    const updatePrice = async () => {
+      if (!sellToken || !buyToken || !sellAmount || parseFloat(sellAmount) === 0) {
+        setBuyAmount('0');
+        return;
+      }
+
+      try {
+        const sellAmountInBaseUnits = parseUnits(
+          sellAmount, 
+          sellToken.decimals
+        ).toString();
+
+        const params = {
+          chainId: Number(chainId),
+          sellToken: sellToken.address === ETH_ADDRESS ? 'ETH' : sellToken.address,
+          buyToken: buyToken.address === ETH_ADDRESS ? 'ETH' : buyToken.address,
+          sellAmount: sellAmountInBaseUnits,
+          taker: address,
+          intentOnFilling: true,
+          slippageBps: Math.round(ethSlippagePercentage * 100) // Add slippage
+        };
+
+        console.log('Requesting price with params:', params);
+
+        const response = await axios.get('/api/price', { params });
+        
+        if (response.data.buyAmount) {
+          const formattedBuyAmount = formatUnits(
+            response.data.buyAmount, 
+            buyToken.decimals
+          );
+          console.log('Setting buy amount:', formattedBuyAmount);
+          setBuyAmount(formattedBuyAmount);
+
+          // Also update USD values if needed
+          if (response.data.estimatedPriceImpact) {
+            console.log('Price impact:', response.data.estimatedPriceImpact);
+          }
+        } else {
+          console.log('No buy amount in response:', response.data);
+          setBuyAmount('0');
+        }
+      } catch (error) {
+        console.error('Error fetching price:', error);
+        setBuyAmount('0');
+        // Don't throw error here to prevent UI from breaking
+      }
+    };
+
+    // Debounce the price update to prevent too many requests
+    const debouncedUpdate = debounce(updatePrice, 1000); // Increased debounce time
+    debouncedUpdate();
+
+    return () => {
+      debouncedUpdate.cancel();
+    };
+  }, [sellToken, buyToken, sellAmount, address, chainId, ethSlippagePercentage]); // Added ethSlippagePercentage
+
+  // Add this helper function to calculate the sell amount in base units
+  const getSellAmountInBaseUnits = () => {
+    if (!sellToken || !sellAmount) return '0';
+    return parseUnits(sellAmount, sellToken.decimals).toString();
+  };
+
+  // Update the handlePermit2Signature function
   const handlePermit2Signature = async (quote: any): Promise<string> => {
     console.log('Signing Permit2 message...');
     const signature = await signTypedDataAsync(quote.permit2.eip712);
-    console.log('Permit2 signature obtained');
+    console.log('Permit2 signature obtained:', signature);
 
     const MAGIC_CALLDATA_STRING = "f".repeat(130);
-    let txData = quote.data;
+    let txData = quote.transaction.data;
 
     if (txData.includes(MAGIC_CALLDATA_STRING)) {
       return txData.replace(
@@ -1515,10 +1704,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     ]) as `0x${string}`;
   };
 
-  // Add this state near the top of the component with other state declarations
-  const [ethSlippagePercentage, setEthSlippagePercentage] = useState<number>(
-    ETH_DEFAULT_SLIPPAGE_PERCENTAGE
-  );
+  // Add an effect to handle slippage changes
+  useEffect(() => {
+    console.log('Slippage state updated:', ethSlippagePercentage, '%');
+    // Trigger a new quote when slippage changes
+    if (sellToken && buyToken && sellAmount) {
+      debouncedUpdateBuyAmount();
+    }
+  }, [ethSlippagePercentage]);
 
   // Update the renderEthereumSwapInterface function
   const renderEthereumSwapInterface = () => (
@@ -1634,7 +1827,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         <div className="mb-4">
           <EthSlippageSettings
             slippage={ethSlippagePercentage}
-            onSlippageChange={setEthSlippagePercentage}
+            onSlippageChange={(newSlippage: number) => {
+              console.log('Updating slippage to:', newSlippage, '%');
+              setEthSlippagePercentage(newSlippage);
+            }}
           />
         </div>
 
@@ -2157,6 +2353,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     return `${truncated} ${symbol}`;
   };
 
+  // Add a separate useEffect to monitor slippage changes
+  useEffect(() => {
+    console.log('ethSlippage state updated to:', ethSlippage, '%');
+  }, [ethSlippage]);
+
+  // Add this helper function to get the correct exchange proxy address for the current chain
+  const getExchangeProxyAddress = (chainId: number): string => {
+    return EXCHANGE_PROXY_ADDRESSES[chainId];
+  };
+
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
       <div className="w-full mb-4">
@@ -2323,7 +2529,7 @@ const getAddressLookupTableAccounts = async (
 ): Promise<AddressLookupTableAccount[]> => {
   const addressLookupTableAccountInfos = await connection.getMultipleAccountsInfo(
     keys.map((key) => new PublicKey(key))
-  );
+  ); // Remove the extra parenthesis here
 
   return addressLookupTableAccountInfos.reduce((acc, accountInfo, index) => {
     const addressLookupTableAddress = keys[index];

@@ -1,55 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 
-const COINGECKO_API_URL = 'https://api.coingecko.com/api/v3';
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000;
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Add caching
+const cache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_DURATION = 60000; // 1 minute
 
 export async function GET(request: NextRequest) {
-  const endpoint = request.nextUrl.searchParams.get('endpoint');
-  const contract_addresses = request.nextUrl.searchParams.get('contract_addresses');
-  const vs_currencies = request.nextUrl.searchParams.get('vs_currencies');
+  try {
+    const { searchParams } = new URL(request.url);
+    const endpoint = searchParams.get('endpoint');
+    const contract_addresses = searchParams.get('contract_addresses');
+    const vs_currencies = searchParams.get('vs_currencies');
 
-  if (!endpoint) {
-    return NextResponse.json({ error: 'Missing endpoint parameter' }, { status: 400 });
-  }
-
-  let retries = 0;
-  while (retries < MAX_RETRIES) {
-    try {
-      const response = await axios.get(`${COINGECKO_API_URL}/${endpoint}`, {
-        params: {
-          contract_addresses,
-          vs_currencies,
-        },
-        headers: {
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
-      });
-
-      return NextResponse.json(response.data);
-    } catch (error: any) {
-      if (error.response?.status === 429) {
-        // Rate limit hit - wait and retry
-        retries++;
-        if (retries < MAX_RETRIES) {
-          await sleep(RETRY_DELAY * retries);
-          continue;
-        }
-      }
-      console.error('Error fetching data from CoinGecko:', error);
-      return NextResponse.json(
-        { error: 'Error fetching data from CoinGecko' }, 
-        { status: error.response?.status || 500 }
-      );
+    const cacheKey = `${endpoint}-${contract_addresses}-${vs_currencies}`;
+    const cached = cache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return NextResponse.json(cached.data);
     }
-  }
 
-  return NextResponse.json(
-    { error: 'Max retries reached for CoinGecko API' }, 
-    { status: 429 }
-  );
+    const response = await axios.get(`https://api.coingecko.com/api/v3/${endpoint}`, {
+      params: {
+        contract_addresses,
+        vs_currencies,
+      },
+      headers: {
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
+      }
+    });
+
+    // Cache the response
+    cache.set(cacheKey, {
+      data: response.data,
+      timestamp: Date.now()
+    });
+
+    return NextResponse.json(response.data);
+  } catch (error: any) {
+    console.error('Error fetching data from CoinGecko:', error);
+    
+    // If rate limited, return cached data if available
+    if (error.response?.status === 429) {
+      const cacheKey = `${searchParams.get('endpoint')}-${searchParams.get('contract_addresses')}-${searchParams.get('vs_currencies')}`;
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        return NextResponse.json(cached.data);
+      }
+    }
+
+    return NextResponse.json(
+      { error: 'Failed to fetch data' },
+      { status: error.response?.status || 500 }
+    );
+  }
 }

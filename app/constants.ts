@@ -19,7 +19,7 @@ export const MAGIC_CALLDATA_STRING = "f".repeat(130);
 export const MAX_ALLOWANCE = BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935");
 export const GAS_LIMIT_BUFFER = 1.1;
 export const DEFAULT_DEADLINE = Math.floor(Date.now() / 1000) + 20 * 60;
-export const DEFAULT_SLIPPAGE_BPS = 300;
+export const DEFAULT_SLIPPAGE_BPS = 50;
 
 // Fee Related Constants
 export const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
@@ -53,7 +53,7 @@ export const ZEROX_API_VERSIONS: { [chainId: number]: string } = {
   10: 'v2',   // Optimism
   137: 'v2',  // Polygon
   42161: 'v2', // Arbitrum
-  43114: 'v1'  // Avalanche
+  43114: 'v2'  // Avalanche
 };
 
 // Exchange Proxy Addresses
@@ -434,4 +434,7 @@ export const TOKEN_LIST_URLS: { [chainId: number]: string } = {
 // Add these with your other constants
 export const JUPITER_REFERRAL_ACCOUNT = process.env.JUPITER_REFERRAL_ACCOUNT as string;
 export const JUPITER_FEE_BPS = Number(process.env.JUPITER_FEE_BPS) || 15; // 0.15% = 15 basis points
+
+// Add these new constants
+export const ALLOWANCE_HOLDER_ADDRESS = '0x0000000000001fF3684f28c67538d4D072C22734';
 
