@@ -8,7 +8,7 @@ import {
   WRAPPED_SOL_MINT,
   JUPITER_REFERRAL_ACCOUNT,
   JUPITER_FEE_BPS
-} from '../constants';
+} from '@app/constants';
 
 // Helper function to normalize mint addresses for Jupiter API
 const normalizeMint = (mintAddress: string) => {
@@ -69,19 +69,20 @@ export const fetchJupiterQuote = async (params: {
     console.log('Fetching Jupiter quote with URL:', url);
 
     const response = await fetch(url);
-    const data = await response.json();
-    
     if (!response.ok) {
-      throw new Error(`Jupiter quote API error: ${response.status}, ${JSON.stringify(data)}`);
+      const errorData = await response.json();
+      throw new Error(`Jupiter API error: ${JSON.stringify(errorData)}`);
     }
 
+    const data = await response.json();
+    
     // Add slippage to the response for use in swap
     return {
       ...data,
       slippageBps
     };
   } catch (error) {
-    console.error('\n Error fetching Jupiter quote:', error);
+    console.error('Error fetching Jupiter quote:', error);
     throw error;
   }
 };

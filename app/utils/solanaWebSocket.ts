@@ -161,19 +161,13 @@ export class SolanaWebSocket {
   }
 
   async subscribeToTransaction(signature: string, callbacks: {
-    onStatusChange?: (status: 'pending' | 'success' | 'error') => void;
-    onFinality?: (success: boolean) => void;
-  }): Promise<string> {
+    onStatusChange: (status: 'pending' | 'success' | 'error') => void;
+    onFinality: (success: boolean) => void;
+  }) {
     try {
-      // Validate signature format
-      if (!signature || signature.length !== 88) {
-        console.error('Invalid signature format:', signature);
-        callbacks.onStatusChange?.('error');
-        callbacks.onFinality?.(false);
-        return 'invalid-signature';
+      if (!this.ws && !this.backupWs) {
+        await this.connect();
       }
-
-      await this.connect();
 
       const activeWs = this.ws?.readyState === WebSocket.OPEN ? this.ws : this.backupWs;
       if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
@@ -182,7 +176,6 @@ export class SolanaWebSocket {
 
       const subscriptionId = this.nextSubscriptionId++;
       
-      // Use more reliable confirmation settings
       const subscribeMessage = {
         jsonrpc: '2.0',
         id: subscriptionId,
@@ -191,103 +184,41 @@ export class SolanaWebSocket {
           signature,
           {
             commitment: 'confirmed',
-            enableReceivedNotification: true,
-            encoding: 'jsonParsed'
+            enableReceivedNotification: true
           }
         ]
       };
 
-      console.log('Subscribing to transaction:', signature);
+      console.log('Setting up WebSocket subscription for:', signature);
       activeWs.send(JSON.stringify(subscribeMessage));
-
-      // Immediate status check with proper error handling
-      try {
-        const connection = getConnection();
-        const status = await connection.getSignatureStatus(signature, {
-          searchTransactionHistory: true
-        });
-
-        if (status.value?.err) {
-          callbacks.onStatusChange?.('error');
-          callbacks.onFinality?.(false);
-          return subscriptionId.toString();
-        }
-
-        if (status.value?.confirmationStatus === 'confirmed' || 
-            status.value?.confirmationStatus === 'finalized') {
-          callbacks.onStatusChange?.('success');
-          callbacks.onFinality?.(true);
-          return subscriptionId.toString();
-        }
-      } catch (error) {
-        console.error('Error checking initial status:', error);
-        // Don't fail here, continue with subscription
-      }
 
       // Set up subscription callback
       this.subscriptions.set(subscriptionId.toString(), (result) => {
-        try {
-          if (result.err) {
-            callbacks.onStatusChange?.('error');
-            callbacks.onFinality?.(false);
-          } else if (result.value?.confirmationStatus === 'confirmed' || 
-                    result.value?.confirmationStatus === 'finalized') {
-            callbacks.onStatusChange?.('success');
-            callbacks.onFinality?.(true);
-          } else {
-            callbacks.onStatusChange?.('pending');
-          }
-        } catch (error) {
-          console.error('Error in subscription callback:', error);
-          callbacks.onStatusChange?.('pending');
+        console.log('WebSocket received update for', signature, ':', result);
+        
+        if (result.err) {
+          console.log('Transaction error detected:', result.err);
+          callbacks.onStatusChange('error');
+          callbacks.onFinality(false);
+          this.unsubscribeFromSignature(subscriptionId.toString());
+        } else if (result.value?.confirmationStatus === 'confirmed' || 
+                   result.value?.confirmationStatus === 'finalized') {
+          console.log('Transaction confirmed:', result.value.confirmationStatus);
+          callbacks.onStatusChange('success');
+          callbacks.onFinality(true);
+          this.unsubscribeFromSignature(subscriptionId.toString());
+        } else {
+          console.log('Transaction still pending');
+          callbacks.onStatusChange('pending');
         }
       });
 
       return subscriptionId.toString();
-
     } catch (error) {
-      console.error('Error subscribing to transaction:', error);
-      
-      // Fall back to polling with better error handling
-      let pollCount = 0;
-      const maxPolls = 60; // 1 minute with 1s interval
-      
-      const pollInterval = setInterval(async () => {
-        try {
-          pollCount++;
-          if (pollCount > maxPolls) {
-            clearInterval(pollInterval);
-            callbacks.onStatusChange?.('error');
-            callbacks.onFinality?.(false);
-            return;
-          }
-
-          const connection = getConnection();
-          const status = await connection.getSignatureStatus(signature, {
-            searchTransactionHistory: true
-          });
-
-          if (status.value?.err) {
-            clearInterval(pollInterval);
-            callbacks.onStatusChange?.('error');
-            callbacks.onFinality?.(false);
-            return;
-          }
-
-          if (status.value?.confirmationStatus === 'confirmed' || 
-              status.value?.confirmationStatus === 'finalized') {
-            clearInterval(pollInterval);
-            callbacks.onStatusChange?.('success');
-            callbacks.onFinality?.(true);
-            return;
-          }
-        } catch (error) {
-          console.error('Error polling status:', error);
-          // Don't clear interval on polling errors, keep trying
-        }
-      }, 1000);
-
-      return 'fallback-' + Date.now();
+      console.error('Error in subscribeToTransaction:', error);
+      callbacks.onStatusChange('error');
+      callbacks.onFinality(false);
+      return 'error';
     }
   }
 
@@ -327,4 +258,83 @@ export class SolanaWebSocket {
   }
 }
 
-export const solanaWebSocket = new SolanaWebSocket();
+// Create a single instance
+const solanaWebSocket = new SolanaWebSocket();
+
+// Helper function for transaction subscription
+const subscribeToTransaction = async (signature: string, callbacks: {
+  onStatusChange?: (status: 'pending' | 'success' | 'error') => void;
+  onFinality?: (success: boolean) => void;
+}) => {
+  try {
+    // First check if transaction is already confirmed
+    const connection = getConnection();
+    const status = await connection.getSignatureStatus(signature, {
+      searchTransactionHistory: true
+    });
+
+    if (status.value?.confirmationStatus === 'confirmed' || 
+        status.value?.confirmationStatus === 'finalized') {
+      callbacks.onStatusChange?.('success');
+      callbacks.onFinality?.(true);
+      return;
+    }
+
+    // If not confirmed, set up WebSocket subscription
+    await solanaWebSocket.connect();
+    
+    // Set up polling as backup
+    let attempts = 0;
+    const maxAttempts = 30; // 30 seconds
+    const pollInterval = setInterval(async () => {
+      try {
+        attempts++;
+        const status = await connection.getSignatureStatus(signature);
+        console.log(`Polling status for ${signature}:`, status.value?.confirmationStatus);
+        
+        if (status.value?.err) {
+          clearInterval(pollInterval);
+          callbacks.onStatusChange?.('error');
+          callbacks.onFinality?.(false);
+        } else if (status.value?.confirmationStatus === 'confirmed' || 
+                   status.value?.confirmationStatus === 'finalized') {
+          clearInterval(pollInterval);
+          callbacks.onStatusChange?.('success');
+          callbacks.onFinality?.(true);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          callbacks.onStatusChange?.('error');
+          callbacks.onFinality?.(false);
+        }
+      } catch (error) {
+        console.error('Error polling transaction status:', error);
+      }
+    }, 1000);
+
+    // WebSocket subscription
+    const subscriptionId = await solanaWebSocket.subscribeToTransaction(signature, {
+      onStatusChange: (status) => {
+        console.log(`WebSocket status for ${signature}:`, status);
+        callbacks.onStatusChange?.(status);
+        if (status === 'success' || status === 'error') {
+          clearInterval(pollInterval);
+        }
+      },
+      onFinality: (success) => {
+        console.log(`WebSocket finality for ${signature}:`, success);
+        callbacks.onFinality?.(success);
+        clearInterval(pollInterval);
+      }
+    });
+
+    return subscriptionId;
+  } catch (error) {
+    console.error('Error subscribing to transaction:', error);
+    callbacks.onStatusChange?.('error');
+    callbacks.onFinality?.(false);
+    return 'error';
+  }
+};
+
+// Single export statement for all items
+export { solanaWebSocket, subscribeToTransaction };

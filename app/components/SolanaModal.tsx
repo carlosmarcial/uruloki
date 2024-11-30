@@ -28,7 +28,6 @@ export function SolanaModal({ isOpen, onClose, children, containerRef }: SolanaM
       }
     };
 
-    // Update position initially and on window resize
     if (isOpen) {
       updateModalPosition();
       window.addEventListener('resize', updateModalPosition);
@@ -47,8 +46,17 @@ export function SolanaModal({ isOpen, onClose, children, containerRef }: SolanaM
         className="fixed inset-0 bg-black/40 backdrop-blur-[2px]"
         onClick={onClose}
       />
-      <div style={modalStyle} className="bg-gray-900/95 rounded-lg backdrop-blur-sm">
-        <div className="h-full p-4 flex flex-col">
+      <div 
+        style={modalStyle} 
+        className="bg-gray-900/95 rounded-lg backdrop-blur-sm shadow-xl border border-purple-500/20"
+      >
+        <div className="h-full p-4 flex flex-col relative">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+          >
+            <X className="h-6 w-6" />
+          </button>
           {children}
         </div>
       </div>
