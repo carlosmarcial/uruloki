@@ -2,8 +2,6 @@ import React, { useCallback, useRef, useEffect } from 'react';
 import { SolanaModal } from './SolanaModal';
 import { DEFAULT_SLIPPAGE_BPS, JUPITER_FEE_BPS } from '@/app/constants';
 import { XCircle, CheckCircle, Loader2 } from 'lucide-react';
-import ReactCanvasConfetti from 'react-canvas-confetti';
-import type { CreateTypes } from 'canvas-confetti';
 
 interface SwapConfirmationModalProps {
   isOpen: boolean;
@@ -42,28 +40,6 @@ const getStatusStyles = (status: string) => {
   }
 };
 
-// Add confetti styles
-const canvasStyles = {
-  position: 'absolute',
-  pointerEvents: 'none',
-  width: '100%',
-  height: '100%',
-  top: 0,
-  left: 0
-} as const;
-
-// Add this function for confetti configuration
-const getConfettiOptions = () => ({
-  particleCount: 100,
-  spread: 70,
-  origin: { y: 0.5 },
-  colors: ['#9333ea', '#a855f7', '#c084fc', '#e9d5ff', '#ffffff'],
-  disableForReducedMotion: true,
-  gravity: 0.5,
-  scalar: 0.7,
-  ticks: 100
-});
-
 export default function SwapConfirmationModal({
   isOpen,
   onClose,
@@ -79,19 +55,6 @@ export default function SwapConfirmationModal({
   containerRef,
   transactionStatus = 'idle'
 }: SwapConfirmationModalProps) {
-  const confettiRef = useRef<CreateTypes | null>(null);
-
-  // Fire confetti when transaction status changes to success
-  useEffect(() => {
-    if (transactionStatus === 'success' && confettiRef.current) {
-      confettiRef.current(getConfettiOptions());
-    }
-  }, [transactionStatus]);
-
-  const getInstance = useCallback((instance: CreateTypes | null) => {
-    confettiRef.current = instance;
-  }, []);
-
   const renderTransactionStatus = () => {
     switch (transactionStatus) {
       case 'pending':
@@ -107,24 +70,21 @@ export default function SwapConfirmationModal({
       case 'success':
         return (
           <div className="bg-purple-900/50 border border-purple-500 text-purple-200 p-4 rounded-lg flex items-center space-x-3 relative overflow-hidden">
-            <ReactCanvasConfetti
-              refConfetti={getInstance}
-              style={canvasStyles}
-              className="pointer-events-none absolute inset-0"
-            />
-            <CheckCircle className="h-6 w-6 text-purple-500" />
-            <div>
-              <p className="font-semibold mb-2">Transaction Successful! 🎉</p>
-              {transactionSignature && (
-                <a 
-                  href={`https://solscan.io/tx/${transactionSignature}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-purple-400 hover:text-purple-300 underline text-sm"
-                >
-                  View on Solscan ↗
-                </a>
-              )}
+            <div className="relative z-10 flex items-center space-x-3">
+              <CheckCircle className="h-6 w-6 text-purple-500" />
+              <div>
+                <p className="font-semibold mb-2">Transaction Successful! 🎉</p>
+                {transactionSignature && (
+                  <a 
+                    href={`https://solscan.io/tx/${transactionSignature}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 underline text-sm"
+                  >
+                    View on Solscan ↗
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -148,6 +108,7 @@ export default function SwapConfirmationModal({
       isOpen={isOpen} 
       onClose={onClose}
       containerRef={containerRef}
+      showConfetti={transactionStatus === 'success'}
     >
       <div className="h-full flex flex-col">
         <h2 className="text-xl font-bold mb-6 text-white pt-2">Confirm Swap</h2>

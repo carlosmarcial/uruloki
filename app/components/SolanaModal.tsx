@@ -1,15 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { X } from 'lucide-react';
+import ConfettiEffect, { ConfettiEffectRef } from './ConfettiEffect';
 
 interface SolanaModalProps {
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;
   containerRef?: React.RefObject<HTMLDivElement>;
+  showConfetti?: boolean;
 }
 
-export function SolanaModal({ isOpen, onClose, children, containerRef }: SolanaModalProps) {
+export function SolanaModal({ 
+  isOpen, 
+  onClose, 
+  children, 
+  containerRef,
+  showConfetti = false 
+}: SolanaModalProps) {
   const [modalStyle, setModalStyle] = useState<React.CSSProperties>({});
+  const confettiRef = useRef<ConfettiEffectRef>(null);
 
   useEffect(() => {
     const updateModalPosition = () => {
@@ -38,6 +47,12 @@ export function SolanaModal({ isOpen, onClose, children, containerRef }: SolanaM
     };
   }, [isOpen, containerRef]);
 
+  useEffect(() => {
+    if (showConfetti && confettiRef.current) {
+      confettiRef.current.fire();
+    }
+  }, [showConfetti]);
+
   if (!isOpen) return null;
 
   return (
@@ -51,6 +66,7 @@ export function SolanaModal({ isOpen, onClose, children, containerRef }: SolanaM
         className="bg-gray-900/95 rounded-lg backdrop-blur-sm shadow-xl border border-purple-500/20"
       >
         <div className="h-full p-4 flex flex-col relative">
+          <ConfettiEffect ref={confettiRef} />
           <button
             onClick={onClose}
             className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
