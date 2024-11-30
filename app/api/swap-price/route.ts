@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import { retry } from '@/app/utils/retry';
 
+// Fee recipient constants
+const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
+const AFFILIATE_FEE = '0.01'; // 1%
+
 export async function GET(request: NextRequest) {
   try {
     const params = new URLSearchParams(request.nextUrl.search);
@@ -9,8 +13,8 @@ export async function GET(request: NextRequest) {
     const sellToken = params.get('sellToken');
     const buyToken = params.get('buyToken');
     const sellAmount = params.get('sellAmount');
-    const taker = params.get('taker');
-    const slippageBps = params.get('slippageBps');
+    const taker = params.get('taker') || params.get('takerAddress');
+    const slippageBps = params.get('slippageBps') || params.get('slippagePercentage');
 
     console.log('Received parameters:', {
       chainId,
@@ -21,41 +25,35 @@ export async function GET(request: NextRequest) {
       slippageBps
     });
 
-    if (!chainId || !sellToken || !buyToken || !sellAmount || !taker) {
-      console.error('Missing parameters:', {
-        chainId,
-        sellToken,
-        buyToken,
-        sellAmount,
-        taker
-      });
+    if (!chainId || !sellToken || !buyToken || !sellAmount) {
       throw new Error('Missing required parameters');
     }
 
-    const apiBaseUrl = 'https://api.0x.org';
-
-    const formattedSellToken = sellToken === 'ETH' ? 'WETH' : sellToken;
-    const formattedBuyToken = buyToken === 'ETH' ? 'WETH' : buyToken;
-
-    const apiParams = {
-      sellToken: formattedSellToken,
-      buyToken: formattedBuyToken,
-      sellAmount,
-      taker,
-      chainId,
-      slippageBps: Number(slippageBps),
-      intentOnFilling: true
-    };
-
-    console.log('Requesting quote with params:', apiParams);
+    const isEthTrade = sellToken.toLowerCase() === 'eth' || buyToken.toLowerCase() === 'eth';
+    const endpoint = isEthTrade ? 
+      'https://api.0x.org/swap/v1/price' : 
+      'https://api.0x.org/swap/permit2/price';
 
     try {
       const response = await retry(
-        () => axios.get(`${apiBaseUrl}/swap/v2/quote`, {
-          params: apiParams,
+        () => axios.get(endpoint, {
+          params: {
+            sellToken: sellToken,
+            buyToken: buyToken,
+            sellAmount,
+            chainId,
+            ...(isEthTrade ? {
+              takerAddress: taker,
+              slippagePercentage: Number(slippageBps) / 10000
+            } : {
+              taker,
+              slippageBps: Number(slippageBps)
+            }),
+            feeRecipient: FEE_RECIPIENT,
+            buyTokenPercentageFee: AFFILIATE_FEE
+          },
           headers: {
-            '0x-api-key': process.env.ZEROX_API_KEY,
-            '0x-version': 'v2'
+            '0x-api-key': process.env.ZEROX_API_KEY
           }
         }),
         {
@@ -65,21 +63,16 @@ export async function GET(request: NextRequest) {
         }
       );
 
-      console.log('Quote received:', {
-        buyAmount: response.data.buyAmount,
-        price: response.data.price,
-        sources: response.data.sources,
-        gas: response.data.gas
-      });
+      if (sellToken.toLowerCase() === 'eth') {
+        response.data.value = sellAmount;
+      }
 
       return NextResponse.json(response.data);
     } catch (apiError: any) {
-      console.error('0x API Error Response:', {
+      console.error('0x API Error:', {
         status: apiError.response?.status,
         data: apiError.response?.data,
-        validationErrors: apiError.response?.data?.validationErrors,
-        details: apiError.response?.data?.details,
-        requestId: apiError.response?.data?.request_id,
+        message: apiError.message,
         url: apiError.config?.url,
         params: apiError.config?.params
       });
@@ -87,21 +80,13 @@ export async function GET(request: NextRequest) {
       throw apiError;
     }
   } catch (error: any) {
-    console.error('API Error:', {
-      message: error.message,
-      response: error.response?.data,
-      validationErrors: error.response?.data?.validationErrors,
-      params: request.nextUrl.searchParams.toString()
-    });
-
+    console.error('API Error:', error);
     return NextResponse.json(
       { 
         error: 'Failed to fetch swap quote',
-        details: error.response?.data || error.message,
-        originalError: error.response?.data,
-        validationErrors: error.response?.data?.validationErrors
+        details: error.message || 'Unknown error'
       }, 
-      { status: error.response?.status || 500 }
+      { status: 500 }
     );
   }
 }

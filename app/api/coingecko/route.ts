@@ -11,19 +11,32 @@ export async function GET(request: NextRequest) {
     const endpoint = searchParams.get('endpoint');
     const contract_addresses = searchParams.get('contract_addresses');
     const vs_currencies = searchParams.get('vs_currencies');
+    const ids = searchParams.get('ids');
 
-    const cacheKey = `${endpoint}-${contract_addresses}-${vs_currencies}`;
+    const cacheKey = `${endpoint}-${contract_addresses || ids}-${vs_currencies}`;
     const cached = cache.get(cacheKey);
     
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       return NextResponse.json(cached.data);
     }
 
-    const response = await axios.get(`https://api.coingecko.com/api/v3/${endpoint}`, {
-      params: {
+    let url = `https://api.coingecko.com/api/v3/${endpoint}`;
+    let params: any = {};
+
+    if (endpoint === 'simple/price') {
+      params = {
+        ids,
+        vs_currencies
+      };
+    } else {
+      params = {
         contract_addresses,
         vs_currencies,
-      },
+      };
+    }
+
+    const response = await axios.get(url, {
+      params,
       headers: {
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
@@ -42,7 +55,7 @@ export async function GET(request: NextRequest) {
     
     // If rate limited, return cached data if available
     if (error.response?.status === 429) {
-      const cacheKey = `${searchParams.get('endpoint')}-${searchParams.get('contract_addresses')}-${searchParams.get('vs_currencies')}`;
+      const cacheKey = `${searchParams.get('endpoint')}-${searchParams.get('contract_addresses') || searchParams.get('ids')}-${searchParams.get('vs_currencies')}`;
       const cached = cache.get(cacheKey);
       if (cached) {
         return NextResponse.json(cached.data);

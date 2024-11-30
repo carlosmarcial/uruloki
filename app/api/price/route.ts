@@ -27,27 +27,51 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Format tokens - use WETH for ETH
-    const formattedSellToken = sellToken === 'ETH' ? 'WETH' : sellToken;
-    const formattedBuyToken = buyToken === 'ETH' ? 'WETH' : buyToken;
+    // Determine if we're dealing with a native ETH trade
+    const isEthTrade = sellToken.toLowerCase() === 'eth' || buyToken.toLowerCase() === 'eth';
+    
+    if (isEthTrade) {
+      // Use v1 endpoint for ETH trades
+      const response = await axios.get('https://api.0x.org/swap/v1/price', {
+        params: {
+          sellToken: sellToken,
+          buyToken: buyToken,
+          sellAmount,
+          chainId: Number(chainId),
+          takerAddress: taker,
+          slippagePercentage: Number(slippageBps) / 10000,
+          skipValidation: true
+        },
+        headers: {
+          '0x-api-key': process.env.ZEROX_API_KEY
+        }
+      });
 
-    const response = await axios.get(`https://api.0x.org/swap/permit2/price`, {
-      params: {
-        sellToken: formattedSellToken,
-        buyToken: formattedBuyToken,
-        sellAmount,
-        chainId: Number(chainId),
-        taker,
-        slippageBps: Number(slippageBps)
-      },
-      headers: {
-        '0x-api-key': process.env.ZEROX_API_KEY,
-        '0x-version': 'v2'
+      if (sellToken.toLowerCase() === 'eth') {
+        response.data.value = sellAmount;
       }
-    });
 
-    console.log('0x API price response:', response.data);
-    return NextResponse.json(response.data);
+      return NextResponse.json(response.data);
+    } else {
+      // Use permit2 endpoint for ERC20-to-ERC20 trades
+      const response = await axios.get('https://api.0x.org/swap/permit2/price', {
+        params: {
+          sellToken: sellToken,
+          buyToken: buyToken,
+          sellAmount,
+          chainId: Number(chainId),
+          taker,
+          slippageBps: Number(slippageBps)
+        },
+        headers: {
+          '0x-api-key': process.env.ZEROX_API_KEY,
+          '0x-version': 'v2'
+        }
+      });
+
+      return NextResponse.json(response.data);
+    }
+
   } catch (error) {
     console.error('Error fetching price:', error);
     if (axios.isAxiosError(error) && error.response) {

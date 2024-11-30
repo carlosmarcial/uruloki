@@ -12,7 +12,31 @@ export const fetchTokenPrice = async (tokenAddress: string, chain: string) => {
       return cached.price;
     }
 
-    // Use Jupiter API for Solana tokens
+    // Special handling for ETH
+    if (tokenAddress.toLowerCase() === 'eth' || 
+        tokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') {
+      try {
+        const response = await axios.get('/api/coingecko', {
+          params: {
+            endpoint: 'simple/price',
+            ids: 'ethereum',
+            vs_currencies: 'usd'
+          }
+        });
+
+        if (response.data?.ethereum?.usd) {
+          const price = response.data.ethereum.usd;
+          priceCache.set(tokenAddress, { price, timestamp: Date.now() });
+          return price;
+        }
+      } catch (error) {
+        console.warn('Error fetching ETH price from CoinGecko:', error);
+        // Fall back to cached price if available
+        if (cached) return cached.price;
+      }
+    }
+
+    // For Solana tokens
     if (chain === 'solana') {
       const response = await axios.get('https://price.jup.ag/v4/price', {
         params: {
@@ -28,7 +52,7 @@ export const fetchTokenPrice = async (tokenAddress: string, chain: string) => {
       return 0;
     }
 
-    // For Ethereum tokens, use cached price if CoinGecko fails
+    // For ERC20 tokens
     try {
       const response = await retry(
         async () => axios.get('/api/coingecko', {
@@ -52,9 +76,7 @@ export const fetchTokenPrice = async (tokenAddress: string, chain: string) => {
       }
     } catch (error) {
       console.warn('CoinGecko API error, using cached price if available:', error);
-      if (cached) {
-        return cached.price;
-      }
+      if (cached) return cached.price;
     }
 
     return 0;
