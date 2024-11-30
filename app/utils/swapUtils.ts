@@ -69,29 +69,25 @@ export const fetchQuote = async (
     throw new Error(`Unsupported chain ID: ${chainId}`);
   }
 
-  const params = apiVersion === 'v2' ? {
+  const feeBps = '15';
+
+  const params = {
     chainId,
     sellToken,
     buyToken,
     sellAmount,
-    taker: takerAddress,
-    swapFeeRecipient: process.env.NEXT_PUBLIC_FEE_RECIPIENT,
-    swapFeeBps: '100',
-    swapFeeToken: buyToken,
-    enableSlippageProtection: false
-  } : {
-    sellToken,
-    buyToken,
-    sellAmount,
     takerAddress,
-    affiliateAddress: process.env.NEXT_PUBLIC_FEE_RECIPIENT,
-    affiliateFeeBasisPoints: '100',
-    skipValidation: false,
-    slippagePercentage: (Number(slippageBps) / 10000).toString()
+    slippagePercentage: (Number(slippageBps) / 10000).toString(),
+    enableSlippageProtection: true,
+    integrator: 'uruloki-dex',
+    integratorFee: feeBps,
+    integratorFeeRecipient: FEE_RECIPIENT,
+    skipValidation: false
   };
 
   try {
-    const response = await axios.get(`${baseUrl}/swap/v1/quote`, {
+    const endpoint = '/swap/v1/quote';
+    const response = await axios.get(`${baseUrl}${endpoint}`, {
       params,
       headers: {
         '0x-api-key': process.env.ZEROX_API_KEY || '',

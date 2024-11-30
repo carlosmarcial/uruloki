@@ -3,7 +3,7 @@ import { Address } from 'viem';
 
 export const MAGIC_CALLDATA_STRING = "f".repeat(130); // used when signing the eip712 message
 
-export const AFFILIATE_FEE = '0.01'; // 1% affiliate fee
+export const AFFILIATE_FEE = '0.0015'; // 0.15% affiliate fee
 export const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
 
 export const MAINNET_EXCHANGE_PROXY = "0xdef1c0ded9bec7f1a1670819833240f027b25eff";

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import { PERMIT2_ADDRESS } from '@/app/constants';
 
-// Fee recipient constants
+// Constants
 const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
-const AFFILIATE_FEE = '0.01'; // 1%
+const ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const sellAmount = searchParams.get('sellAmount');
     const taker = searchParams.get('taker');
     const chainId = searchParams.get('chainId');
-    const slippageBps = searchParams.get('slippageBps');
+    const slippageBps = searchParams.get('slippageBps') || '50'; // Default to 0.5%
 
     console.log('Quote API called with params:', { 
       sellToken, 
@@ -35,115 +35,116 @@ export async function GET(request: NextRequest) {
     try {
       const isEthTrade = sellToken.toLowerCase() === 'eth' || buyToken.toLowerCase() === 'eth';
       
+      // Convert ETH to the proper address format
+      const formattedSellToken = sellToken.toLowerCase() === 'eth' ? ETH_ADDRESS : sellToken;
+      const formattedBuyToken = buyToken.toLowerCase() === 'eth' ? ETH_ADDRESS : buyToken;
+
+      const baseParams = {
+        sellToken: formattedSellToken,
+        buyToken: formattedBuyToken,
+        sellAmount,
+        chainId: Number(chainId),
+        takerAddress: taker,
+        slippagePercentage: Number(slippageBps) / 10000,
+        skipValidation: false,
+        intentOnFilling: true,
+        enableSlippageProtection: true,
+        integrator: 'uruloki-dex'
+      };
+
       if (isEthTrade) {
         // For ETH trades, use v1 quote endpoint
-        const apiParams = {
-          sellToken: 'ETH',
-          buyToken: buyToken,
-          sellAmount,
-          takerAddress: taker,
-          chainId: Number(chainId),
-          affiliateAddress: FEE_RECIPIENT,
-          affiliateFee: AFFILIATE_FEE,
-          skipValidation: false,
-          slippagePercentage: Number(slippageBps) / 10000
-        };
-
-        console.log('Requesting ETH quote with params:', apiParams);
-
         const response = await axios.get('https://api.0x.org/swap/v1/quote', {
-          params: apiParams,
+          params: {
+            ...baseParams,
+            integratorFee: '15',
+            integratorFeeRecipient: FEE_RECIPIENT
+          },
           headers: {
+            'Content-Type': 'application/json',
             '0x-api-key': process.env.ZEROX_API_KEY
           }
         });
 
         console.log('Raw ETH quote response:', response.data);
 
-        // Validate the response
-        if (!response.data || !response.data.to || !response.data.data) {
-          console.error('Invalid quote response:', response.data);
-          throw new Error('Invalid quote response from 0x API');
+        // Validate the response for ETH trades
+        if (!response.data || !response.data.data || !response.data.to) {
+          console.error('Invalid ETH quote response:', response.data);
+          throw new Error('Invalid quote response: missing transaction data');
         }
 
-        // Format the response exactly as expected by the frontend
-        const transactionRequest = {
-          to: response.data.to,
-          data: response.data.data,
-          value: sellToken.toLowerCase() === 'eth' ? sellAmount : '0',
-          gas: response.data.gas || response.data.estimatedGas,
-          gasPrice: response.data.gasPrice,
-          from: taker,
-          chainId: Number(chainId)
-        };
-
-        // Return the exact structure the frontend expects
+        // Format the response for ETH trades
         const quoteResponse = {
-          ...response.data, // Include all original fields
-          transaction: transactionRequest, // Wrap transaction fields in a transaction object
-          sellAmount: response.data.sellAmount,
-          buyAmount: response.data.buyAmount,
-          allowanceTarget: '0x0000000000000000000000000000000000000000',
-          price: response.data.price,
-          guaranteedPrice: response.data.guaranteedPrice,
-          estimatedPriceImpact: response.data.estimatedPriceImpact,
-          sources: response.data.sources,
-          buyTokenAddress: response.data.buyTokenAddress,
-          sellTokenAddress: response.data.sellTokenAddress,
-          protocolFee: response.data.protocolFee || '0',
-          minimumProtocolFee: response.data.minimumProtocolFee || '0'
+          ...response.data,
+          transaction: {
+            from: taker,
+            to: response.data.to,
+            data: response.data.data,
+            value: sellToken.toLowerCase() === 'eth' ? sellAmount : '0',
+            gas: response.data.gas || response.data.estimatedGas,
+            gasPrice: response.data.gasPrice,
+            chainId: Number(chainId)
+          },
+          allowanceTarget: '0x0000000000000000000000000000000000000000'
         };
 
-        console.log('Final formatted quote response:', quoteResponse);
+        console.log('Formatted ETH quote response:', quoteResponse);
         return NextResponse.json(quoteResponse);
-
       } else {
         // Use permit2 endpoint for ERC20-to-ERC20 trades
         const response = await axios.get('https://api.0x.org/swap/permit2/quote', {
           params: {
-            sellToken: sellToken,
-            buyToken: buyToken,
-            sellAmount,
+            ...baseParams,
             taker,
             slippageBps: Number(slippageBps),
-            chainId: Number(chainId),
-            feeRecipient: FEE_RECIPIENT,
-            buyTokenPercentageFee: AFFILIATE_FEE
+            swapFeeRecipient: FEE_RECIPIENT,
+            swapFeeBps: '15',
+            swapFeeToken: formattedBuyToken
           },
           headers: {
+            'Content-Type': 'application/json',
             '0x-api-key': process.env.ZEROX_API_KEY,
             '0x-version': 'v2'
           }
         });
 
-        console.log('ERC20 trade quote response:', response.data);
+        console.log('Raw ERC20 quote response:', response.data);
 
-        return NextResponse.json({
+        // Validate the response for ERC20 trades
+        if (!response.data || !response.data.transaction || !response.data.transaction.data) {
+          console.error('Invalid ERC20 quote response:', response.data);
+          throw new Error('Invalid quote response: missing transaction data');
+        }
+
+        // For ERC20-to-ERC20, the transaction object is already properly formatted
+        const quoteResponse = {
           ...response.data,
           allowanceTarget: PERMIT2_ADDRESS
-        });
-      }
+        };
 
+        console.log('Formatted ERC20 quote response:', quoteResponse);
+        return NextResponse.json(quoteResponse);
+      }
     } catch (apiError: any) {
       console.error('0x API Error:', {
         status: apiError.response?.status,
         data: apiError.response?.data,
         message: apiError.message,
         url: apiError.config?.url,
-        params: apiError.config?.params
+        params: apiError.config?.params,
+        headers: apiError.config?.headers
       });
 
-      if (apiError.response?.data) {
-        return NextResponse.json({ 
-          error: 'Error from 0x API',
-          details: apiError.response.data
-        }, { status: apiError.response.status });
+      if (apiError.response?.data?.data?.details) {
+        console.error('Validation Details:', apiError.response.data.data.details);
       }
 
       return NextResponse.json({ 
         error: 'Failed to fetch quote',
-        details: apiError.message
-      }, { status: 500 });
+        details: apiError.response?.data || apiError.message,
+        validationDetails: apiError.response?.data?.data?.details || []
+      }, { status: apiError.response?.status || 500 });
     }
   } catch (error: any) {
     console.error('Quote API error:', error);

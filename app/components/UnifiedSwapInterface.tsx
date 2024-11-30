@@ -325,7 +325,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const publicClient = usePublicClient();
   const { signTypedDataAsync } = useSignTypedData();
   const { sendTransactionAsync } = useSendTransaction();
-  const { waitForTransactionReceipt } = useWaitForTransactionReceipt();
+  const waitForTransaction = useWaitForTransactionReceipt();
   const { data: walletClient } = useWalletClient();
 
   // Solana wallet
@@ -994,20 +994,41 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
           // Check if approval is needed for non-ETH tokens
           if (sellTokenAddress !== 'ETH') {
-            const exchangeProxyAddress = getExchangeProxyAddress(chainId);
+            const isEthTrade = buyTokenAddress.toLowerCase() === 'eth';
+            const allowanceTarget = isEthTrade 
+              ? getExchangeProxyAddress(chainId)
+              : PERMIT2_ADDRESS;
+
+            console.log('Checking allowance for:', {
+              token: sellToken.symbol,
+              owner: address,
+              spender: allowanceTarget,
+              amount: sellAmount
+            });
+
             const currentAllowance = await publicClient.readContract({
               address: sellToken.address as `0x${string}`,
               abi: ERC20_ABI,
               functionName: 'allowance',
-              args: [address as `0x${string}`, exchangeProxyAddress as `0x${string}`],
+              args: [address as `0x${string}`, allowanceTarget as `0x${string}`],
             });
 
             const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
             if (currentAllowance < sellAmountBigInt) {
               setNeedsAllowance(true);
-              setAllowanceTarget(exchangeProxyAddress);
-              console.log('Token approval needed');
+              setAllowanceTarget(allowanceTarget);
+              console.log('Token approval needed:', {
+                currentAllowance: currentAllowance.toString(),
+                requiredAmount: sellAmountBigInt.toString(),
+                allowanceTarget
+              });
               return;
+            } else {
+              console.log('Sufficient allowance:', {
+                currentAllowance: currentAllowance.toString(),
+                requiredAmount: sellAmountBigInt.toString(),
+                allowanceTarget
+              });
             }
           }
 
@@ -1017,10 +1038,21 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               sellToken: sellTokenAddress,
               buyToken: buyTokenAddress,
               sellAmount: parseUnits(sellAmount, sellToken.decimals).toString(),
-              takerAddress: address,
-              affiliateAddress: FEE_RECIPIENT,
-              affiliateFee: AFFILIATE_FEE,
-              slippagePercentage: slippageDecimal.toString()
+              taker: address,
+              ...(sellTokenAddress.toLowerCase() === 'eth' || buyTokenAddress.toLowerCase() === 'eth'
+                ? {
+                    slippagePercentage: (ethSlippagePercentage / 100).toString(),
+                    affiliateAddress: FEE_RECIPIENT,
+                    affiliateFee: '0.01'
+                  }
+                : {
+                    slippageBps: Math.round(ethSlippagePercentage * 100).toString(),
+                    swapFeeRecipient: FEE_RECIPIENT,
+                    swapFeeBps: '15',
+                    swapFeeToken: buyTokenAddress // Collect fee in the buy token
+                  }),
+              enableSlippageProtection: true,
+              integrator: 'uruloki-dex'
             }
           });
           
@@ -1439,7 +1471,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         console.log('Approval transaction submitted:', hash);
 
         // Wait for confirmation
-        const receipt = await waitForTransactionReceipt(config, {
+        const receipt = await waitForTransaction(config, {
           hash,
           confirmations: 1,
         });
@@ -1514,7 +1546,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           });
 
           const hash = await writeContract(request);
-          await waitForTransactionReceipt(config, { hash });
+          await waitForTransaction(config, { hash });
           console.log('Permit2 approved');
         }
       }
@@ -1586,7 +1618,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       console.log('Transaction submitted:', hash);
       setEthTransactionHash(hash);
 
-      const receipt = await waitForTransactionReceipt(config, {
+      const receipt = await waitForTransaction(config, {
         hash,
         confirmations: 1,
       });
