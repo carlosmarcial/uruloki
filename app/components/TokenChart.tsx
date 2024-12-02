@@ -756,100 +756,81 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
   }
 
   return (
-    <div ref={chartContainerRef} className="w-full h-full relative">
-      {/* AI Analysis Button */}
-      <button
-        onClick={() => {
-          setShowAnalysisModal(true);
-          if (selectedToken) {
-            fetchTokenAnalysis(selectedToken, getNetworkIdentifier(chainId));
-          }
-        }}
-        className="absolute top-4 right-4 z-10 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-lg transition-colors duration-200"
-      >
-        AI Technical Analysis
-      </button>
+    <div ref={chartContainerRef} className="w-full h-full flex flex-col">
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800">
+        <button
+          onClick={() => setShowAnalysisModal(false)}
+          className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
+            !showAnalysisModal 
+              ? 'bg-gray-800 text-white' 
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          Price Chart
+        </button>
+        <button
+          onClick={() => {
+            setShowAnalysisModal(true);
+            if (selectedToken) {
+              fetchTokenAnalysis(selectedToken, getNetworkIdentifier(chainId));
+            }
+          }}
+          className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
+            showAnalysisModal 
+              ? 'bg-gray-800 text-white' 
+              : 'ai-tab-button'
+          }`}
+        >
+          <span className="ai-tab-text">AI Technical Analysis</span>
+        </button>
+      </div>
 
-      {/* Chart iframe */}
-      {chartUrl ? (
-        <iframe
-          ref={iframeRef}
-          src={chartUrl}
-          className="w-full h-full"
-          title="GeckoTerminal Chart"
-          frameBorder="0"
-          allow="clipboard-write"
-          allowFullScreen
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-gray-500">
-          No chart data available
-        </div>
-      )}
-
-      {/* Analysis Modal */}
-      <AnimatePresence>
-        {showAnalysisModal && chartContainerRef.current && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50"
-            style={{
-              width: chartContainerRef.current.offsetWidth,
-              height: chartContainerRef.current.offsetHeight
-            }}
-          >
-            {/* Backdrop with blur */}
-            <div 
-              className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-              onClick={() => setShowAnalysisModal(false)}
+      {/* Content Area */}
+      <div className="flex-1 relative">
+        {/* Chart iframe */}
+        <div className={`w-full h-full transition-opacity duration-200 ${
+          showAnalysisModal ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}>
+          {chartUrl ? (
+            <iframe
+              ref={iframeRef}
+              src={chartUrl}
+              className="w-full h-full"
+              title="GeckoTerminal Chart"
+              frameBorder="0"
+              allow="clipboard-write"
+              allowFullScreen
             />
-            
-            {/* Modal Content */}
-            <div className="absolute inset-0 bg-gray-900/95 rounded-lg backdrop-blur-sm">
-              <div className="relative w-full h-full flex flex-col p-6">
-                {/* Header */}
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-2">
-                    {selectedToken?.logoURI && (
-                      <img 
-                        src={selectedToken.logoURI} 
-                        alt={`${selectedToken.symbol} logo`}
-                        className="w-8 h-8 rounded-full"
-                      />
-                    )}
-                    <h2 className="text-xl font-bold text-white">
-                      AI Technical Analysis for {selectedToken?.symbol}
-                    </h2>
-                  </div>
-                  <button
-                    onClick={() => setShowAnalysisModal(false)}
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-500">
+              {selectedToken ? 'No chart data available' : 'Select a token to view its chart'}
+            </div>
+          )}
+        </div>
 
-                {/* Content Area with Custom Scrollbar */}
-                <div className="flex-1 overflow-auto custom-scrollbar">
-                  {analysis.loading ? (
-                    <div className="flex items-center justify-center h-64">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
-                    </div>
-                  ) : analysis.error ? (
-                    <div className="text-red-500 p-4">{analysis.error}</div>
-                  ) : (
-                    <StreamingText text={analysis.analysis} />
-                  )}
-                </div>
+        {/* Analysis Content */}
+        {showAnalysisModal && (
+          <div className="absolute inset-0 bg-gray-900/95 backdrop-blur-sm">
+            <div className="relative w-full h-full flex flex-col p-6">
+              {/* Analysis Content */}
+              <div className="flex-1 overflow-auto custom-scrollbar">
+                {analysis.loading ? (
+                  <div className="flex items-center justify-center h-64">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+                  </div>
+                ) : analysis.error ? (
+                  <div className="text-red-500 p-4">{analysis.error}</div>
+                ) : (
+                  <StreamingText text={analysis.analysis} />
+                )}
               </div>
             </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
 
-      {/* Add gradient animation styles */}
+      {/* Keep the existing styles */}
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 8px;
@@ -906,6 +887,78 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         .gradient-1 { opacity: 1; }
         .gradient-2 { opacity: 0.9; }
         .gradient-3 { opacity: 0.8; }
+
+        .ai-tab-button {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .ai-tab-text {
+          position: relative;
+          background-clip: text;
+          -webkit-background-clip: text;
+          color: #9ca3af;
+          transition: color 0.3s ease;
+        }
+
+        .ai-tab-button:not(.bg-gray-800) .ai-tab-text {
+          animation: glowPulse 6s ease-in-out infinite;
+        }
+
+        @keyframes glowPulse {
+          0%, 60% {
+            color: #9ca3af;
+            background-image: none;
+          }
+          65%, 75% {
+            background-image: linear-gradient(
+              90deg,
+              #22c55e,
+              #f97316,
+              #22c55e
+            );
+            background-size: 200% auto;
+            color: transparent;
+            background-position: 0% center;
+          }
+          80%, 85% {
+            background-image: linear-gradient(
+              90deg,
+              #22c55e,
+              #f97316,
+              #22c55e
+            );
+            background-size: 200% auto;
+            color: transparent;
+            background-position: 100% center;
+          }
+          90%, 95% {
+            background-image: linear-gradient(
+              90deg,
+              #22c55e,
+              #f97316,
+              #22c55e
+            );
+            background-size: 200% auto;
+            color: transparent;
+            background-position: 0% center;
+          }
+          100% {
+            color: #9ca3af;
+            background-image: none;
+          }
+        }
+
+        /* Simple white color on hover */
+        .ai-tab-button:hover .ai-tab-text {
+          color: white;
+        }
+
+        /* Active state */
+        .bg-gray-800 .ai-tab-text {
+          color: white;
+          animation: none;
+        }
       `}</style>
     </div>
   );
