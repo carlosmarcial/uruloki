@@ -36,19 +36,62 @@ const Marquee: React.FC<MarqueeProps> = ({
   const animationDuration = `${(contentWidth + containerWidth) / speed}s`;
 
   return (
-    <div className="marquee-wrapper">
-      <div ref={containerRef} className="marquee-container">
-        <div 
-          className="marquee-content"
-          style={{
-            animationDuration,
-            animationDirection: direction === "left" ? "normal" : "reverse"
-          }}
-        >
-          <div ref={contentRef} className="marquee-item">{children}</div>
-          <div className="marquee-item">{children}</div>
+    <div className="relative overflow-hidden">
+      {/* Main Color Gradient */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-mask"
+        style={{
+          background: `linear-gradient(90deg, 
+            #77be44 0%,
+            #efb71b 100%
+          )`
+        }}
+      />
+
+      {/* Marquee Content */}
+      <div className="relative z-10">
+        <div ref={containerRef} className="whitespace-nowrap opacity-mask">
+          <div 
+            className="inline-block animate-marquee"
+            style={{
+              animationDuration,
+              animationDirection: direction === "left" ? "normal" : "reverse",
+              animationTimingFunction: "linear",
+              animationIterationCount: "infinite",
+            }}
+          >
+            <div ref={contentRef} className="inline-block">
+              <div className="bg-[#1a1b1f] text-transparent bg-clip-text font-bold">
+                {children}
+              </div>
+            </div>
+            <div className="inline-block">
+              <div className="bg-[#1a1b1f] text-transparent bg-clip-text font-bold">
+                {children}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        @keyframes marquee {
+          0% {
+            transform: translateX(0%);
+          }
+          100% {
+            transform: translateX(-50%);
+          }
+        }
+        .animate-marquee {
+          animation-name: marquee;
+          will-change: transform;
+        }
+        .opacity-mask {
+          -webkit-mask-image: linear-gradient(90deg, transparent, white 15%, white 85%, transparent);
+          mask-image: linear-gradient(90deg, transparent, white 15%, white 85%, transparent);
+        }
+      `}</style>
     </div>
   );
 };
