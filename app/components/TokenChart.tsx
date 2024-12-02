@@ -124,6 +124,46 @@ const StreamingText = ({ text }: { text: string }) => {
   );
 };
 
+const formatPrice = (price: number): string => {
+  // Convert to number in case it's a string
+  const numPrice = Number(price);
+  
+  if (isNaN(numPrice)) return '0';
+
+  // For numbers >= 1, show only 2 decimal places
+  if (numPrice >= 1) {
+    return numPrice.toFixed(2);
+  }
+  
+  // For numbers < 1, we need to analyze the first non-zero decimal place
+  const priceStr = numPrice.toString();
+  const [, decimals] = priceStr.split('.');
+  
+  if (!decimals) return numPrice.toFixed(2);
+
+  // Find first non-zero digit position
+  const firstNonZero = decimals.split('').findIndex(d => d !== '0');
+  
+  if (firstNonZero === -1) {
+    // If all decimals are zero
+    return numPrice.toFixed(2);
+  } else {
+    // If first non-zero digit is followed by a non-zero digit
+    const firstSignificantDigit = parseInt(decimals[firstNonZero]);
+    if (firstSignificantDigit > 0) {
+      // Show 4 decimal places for numbers like 0.2533
+      if (firstNonZero <= 1) {
+        return numPrice.toFixed(4);
+      }
+      // Show 6 decimal places for very small numbers like 0.023229
+      return numPrice.toFixed(6);
+    }
+  }
+  
+  // Default to 6 decimal places for very small numbers
+  return numPrice.toFixed(6);
+};
+
 const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, chainId }, ref) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -319,17 +359,22 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
 
   const calculateRSI = (prices: number[], period = 14) => {
     try {
+      console.log('Calculating RSI with prices:', prices);
+      
       if (prices.length < period + 1) {
-        console.log('Not enough price data for RSI calculation');
+        console.log('Not enough price data for RSI calculation. Need:', period + 1, 'Have:', prices.length);
         return null;
       }
 
       // Calculate price changes
       const changes = prices.slice(1).map((price, i) => price - prices[i]);
+      console.log('Price changes:', changes);
       
       // Separate gains and losses
       const gains = changes.map(change => change > 0 ? change : 0);
       const losses = changes.map(change => change < 0 ? Math.abs(change) : 0);
+      console.log('Gains:', gains);
+      console.log('Losses:', losses);
 
       // Calculate initial average gain and loss
       let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
@@ -341,27 +386,21 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
         avgLoss = ((avgLoss * (period - 1)) + losses[i]) / period;
       }
 
-      // Calculate RS and RSI
-      const rs = avgGain / (avgLoss || 1); // Avoid division by zero
-      const rsi = Math.round(100 - (100 / (1 + rs)));
+      // Add a small epsilon to prevent division by zero and ensure minimal values
+      const epsilon = 0.00001;
+      avgGain = Math.max(avgGain, epsilon);
+      avgLoss = Math.max(avgLoss, epsilon);
 
-      // Enhanced logging for debugging
-      console.log('RSI Calculation Details:', {
-        avgGain,
-        avgLoss,
-        rs,
-        rsi,
-        pricesUsed: prices.length,
-        firstPrice: prices[0],
-        lastPrice: prices[prices.length - 1]
-      });
+      // Calculate RS and RSI
+      const rs = avgGain / avgLoss;
+      const rsi = Math.round(100 - (100 / (1 + rs)));
 
       return {
         value: rsi,
         interpretation: rsi > 70 ? 'Overbought' : rsi < 30 ? 'Oversold' : 'Neutral',
         details: {
-          averageGain: avgGain.toFixed(4),
-          averageLoss: avgLoss.toFixed(4),
+          averageGain: avgGain.toFixed(6),
+          averageLoss: avgLoss.toFixed(6),
           relativeStrength: rs.toFixed(4)
         }
       };
@@ -369,6 +408,56 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
       console.error('Error calculating RSI:', error);
       return null;
     }
+  };
+
+  // Generate more meaningful price points for RSI calculation
+  const generatePricePoints = (poolDetails: any) => {
+    const prices: number[] = [];
+    const currentPrice = Number(poolDetails.base_token_price_usd);
+    
+    // Get the percentage changes
+    const changes = {
+      h24: Number(poolDetails.price_change_percentage?.h24 || 0) / 100,
+      h6: Number(poolDetails.price_change_percentage?.h6 || 0) / 100,
+      h1: Number(poolDetails.price_change_percentage?.h1 || 0) / 100,
+      m30: Number(poolDetails.price_change_percentage?.m30 || 0) / 100,
+      m15: Number(poolDetails.price_change_percentage?.m15 || 0) / 100,
+      m5: Number(poolDetails.price_change_percentage?.m5 || 0) / 100
+    };
+
+    // Calculate historical prices based on percentage changes
+    const price24h = currentPrice / (1 + changes.h24);
+    const price6h = currentPrice / (1 + changes.h6);
+    const price1h = currentPrice / (1 + changes.h1);
+    const price30m = currentPrice / (1 + changes.m30);
+    const price15m = currentPrice / (1 + changes.m15);
+    const price5m = currentPrice / (1 + changes.m5);
+
+    // Create an array of 14+ price points (for RSI calculation)
+    prices.push(
+      price24h,
+      ...interpolatePrices(price24h, price6h, 3),
+      price6h,
+      ...interpolatePrices(price6h, price1h, 3),
+      price1h,
+      ...interpolatePrices(price1h, price30m, 2),
+      price30m,
+      price15m,
+      price5m,
+      currentPrice
+    );
+
+    return prices;
+  };
+
+  // Helper function to interpolate prices between two points
+  const interpolatePrices = (startPrice: number, endPrice: number, points: number): number[] => {
+    const prices: number[] = [];
+    const step = (endPrice - startPrice) / (points + 1);
+    for (let i = 1; i <= points; i++) {
+      prices.push(startPrice + (step * i));
+    }
+    return prices;
   };
 
   const fetchTokenAnalysis = async (token: Token, network: string) => {
@@ -425,39 +514,23 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
       const poolDetails = poolDetailsResponse.data?.data?.attributes;
       console.log('Pool Details:', poolDetails);
 
-      // Generate more price points for RSI calculation
-      const intervals = ['m5', 'm15', 'm30', 'h1', 'h6', 'h24'];
+      // Get current price at the top level
       const currentPrice = Number(poolDetails.base_token_price_usd);
-      
-      // Generate price points with more variation
-      const prices: number[] = [currentPrice];
-      let lastPrice = currentPrice;
-      
-      intervals.forEach(interval => {
-        const change = Number(poolDetails.price_change_percentage?.[interval] || 0) / 100;
-        const previousPrice = lastPrice / (1 + change);
-        
-        // Add more intermediate points
-        const step = (lastPrice - previousPrice) / 4;
-        for (let i = 1; i <= 4; i++) {
-          prices.push(lastPrice - (step * i));
-        }
-        
-        lastPrice = previousPrice;
-      });
 
-      console.log('Price points for RSI calculation:', prices);
+      // Generate price points using the new function
+      const prices = generatePricePoints(poolDetails);
+      console.log('Generated price points:', prices);
 
-      // Calculate RSI
+      // Calculate RSI with the new price points
       const rsiData = calculateRSI(prices);
-      console.log('Calculated RSI Data:', rsiData);
+      console.log('Calculated RSI:', rsiData);
 
       // Prepare market data with explicit RSI information
       const marketData = {
         price: {
-          current: currentPrice.toFixed(8),
+          current: formatPrice(currentPrice),
           change24h: Number(poolDetails.price_change_percentage?.h24 || 0).toFixed(2) + '%',
-          usd: `$${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`,
+          usd: `$${formatPrice(currentPrice)}`,
           eth: poolDetails.base_token_price_native_currency,
           changes: {
             '1h': `${Number(poolDetails.price_change_percentage?.h1 || 0).toFixed(2)}%`,

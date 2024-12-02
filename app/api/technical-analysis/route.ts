@@ -5,6 +5,18 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+function formatLargeNumber(value: string): string {
+  // Remove any existing formatting first
+  const numStr = value.replace(/[^0-9.-]/g, '');
+  const num = parseFloat(numStr);
+  
+  // If it's not a valid number, return the original string
+  if (isNaN(num)) return value;
+  
+  // Format with commas and no decimal places
+  return `$${Math.round(num).toLocaleString('en-US')}`;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -34,7 +46,6 @@ Network: ${token.network}
 Price Data:
 - Current Price: ${marketData.price.usd}
 - 24h Change: ${marketData.price.change24h}
-- Price in ETH: ${marketData.price.eth}
 - Price Changes:
   • 1h: ${marketData.price.changes['1h']}
   • 6h: ${marketData.price.changes['6h']}
@@ -43,12 +54,12 @@ Price Data:
 ${rsiSection}
 
 Volume Analysis:
-- 24h Volume: ${marketData.volume.current24h}
+- 24h Volume: ${formatLargeNumber(marketData.volume.current24h)}
 - Volume Change: ${marketData.volume.change24h}
 - Volume Breakdown:
-  • Last Hour: ${marketData.volume.breakdown.last1h}
-  • Last 6 Hours: ${marketData.volume.breakdown.last6h}
-  • Last 24 Hours: ${marketData.volume.breakdown.last24h}
+  • Last Hour: ${formatLargeNumber(marketData.volume.breakdown.last1h)}
+  • Last 6 Hours: ${formatLargeNumber(marketData.volume.breakdown.last6h)}
+  • Last 24 Hours: ${formatLargeNumber(marketData.volume.breakdown.last24h)}
 
 Trading Activity:
 - Transactions (24h): ${marketData.transactions.last24h.total} trades
@@ -59,9 +70,9 @@ Trading Activity:
 - Unique Sellers: ${marketData.transactions.last24h.uniqueSellers}
 
 Market Metrics:
-- Market Cap: ${marketData.liquidity.marketCap}
-- FDV: ${marketData.liquidity.fdv}
-- Total Liquidity: ${marketData.liquidity.total}
+- Market Cap: ${formatLargeNumber(marketData.liquidity.marketCap)}
+- FDV: ${formatLargeNumber(marketData.liquidity.fdv)}
+- Total Liquidity: ${formatLargeNumber(marketData.liquidity.total)}
 
 Please provide a comprehensive technical analysis focusing on:
 1. Price Action Analysis (using price changes across timeframes)
@@ -69,6 +80,11 @@ Please provide a comprehensive technical analysis focusing on:
 3. RSI Interpretation & Market Momentum (including detailed RSI analysis)
 4. Market Structure (liquidity, market cap, trading patterns)
 5. Short-term Technical Outlook (24-48h)
+
+Important formatting instructions:
+1. Provide your analysis in plain text without any markdown formatting, asterisks, or special characters.
+2. Use simple numbered sections without any text styling or emphasis markers.
+3. Always begin the Price Action Analysis section by stating the current price (${marketData.price.usd}).
 
 Include specific numbers and percentages where relevant. Focus on technical aspects and market structure, with particular attention to the RSI indicators and what they suggest about market momentum.`;
 
