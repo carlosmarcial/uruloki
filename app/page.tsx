@@ -12,7 +12,7 @@ export default function Home() {
 
   return (
     <>
-      <WebGLBackground />
+      <WebGLBackground delay={1000} />
       <div className="content-wrapper flex flex-col min-h-screen">
         <ModelPreloader />
         <Header />

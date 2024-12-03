@@ -13,10 +13,18 @@ const Marquee: React.FC<MarqueeProps> = ({
   speed = 20,
   direction = "left",
 }) => {
+  const [isVisible, setIsVisible] = useState(false);
   const [contentWidth, setContentWidth] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const updateMeasurements = () => {
@@ -44,7 +52,9 @@ const Marquee: React.FC<MarqueeProps> = ({
           background: `linear-gradient(90deg, 
             #77be44 0%,
             #efb71b 100%
-          )`
+          )`,
+          opacity: isVisible ? 1 : 0,
+          transition: 'opacity 1250ms ease-in'
         }}
       />
 
@@ -58,6 +68,8 @@ const Marquee: React.FC<MarqueeProps> = ({
               animationDirection: direction === "left" ? "normal" : "reverse",
               animationTimingFunction: "linear",
               animationIterationCount: "infinite",
+              opacity: isVisible ? 1 : 0,
+              transition: 'opacity 1s ease-in'
             }}
           >
             <div ref={contentRef} className="inline-block">

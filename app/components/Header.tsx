@@ -16,35 +16,10 @@ export default function Header() {
 
   return (
     <>
-      <style jsx global>{`
-        @keyframes sweep {
-          0% {
-            background-position: 200% center;
-          }
-          100% {
-            background-position: -200% center;
-          }
-        }
-        .sweep-text {
-          background: linear-gradient(
-            to right,
-            #77be44 20%,
-            #77be44 40%,
-            #efb71b 50%,
-            #77be44 60%,
-            #77be44 80%
-          );
-          background-size: 200% auto;
-          color: transparent;
-          background-clip: text;
-          -webkit-background-clip: text;
-          animation: sweep 15s linear infinite;
-        }
-      `}</style>
       <header className="flex flex-wrap items-center justify-between p-4 pt-6 px-6 sm:px-12 bg-transparent">
         <div className="flex items-center space-x-4 mb-2 sm:mb-0 transition-transform duration-300 ease-in-out hover:scale-105">
           <Image src="/logo.svg" alt="Uruloki Logo" width={30} height={30} />
-          <span className="text-xl font-bold sweep-text">URULOKI</span>
+          <span className="text-xl font-bold" style={{ color: '#77be44ff' }}>URULOKI</span>
         </div>
         
         <div className="w-full sm:w-auto sm:flex-1 mx-4 max-w-full sm:max-w-[50%] lg:max-w-[60%] order-3 sm:order-2">

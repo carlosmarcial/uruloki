@@ -366,6 +366,17 @@ body {
   height: 100%;
   z-index: -1;
   pointer-events: none;
+  will-change: opacity;
+  opacity: 0;
+  transition: opacity 1000ms ease;
+}
+
+.webgl-background.opacity-60 {
+  opacity: 0.60;
+}
+
+.webgl-background.opacity-0 {
+  opacity: 0;
 }
 
 /* Ensure content is above the background */

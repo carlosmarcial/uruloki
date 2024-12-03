@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
 const vertexShader = `
@@ -86,14 +86,23 @@ const fragmentShader = `
 `;
 
 interface WebGLBackgroundProps {
-  isPaused: boolean;
+  delay?: number;
 }
 
-const WebGLBackground: React.FC = () => {
+const WebGLBackground: React.FC<WebGLBackgroundProps> = ({ delay = 3000 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    if (!mountRef.current) return;
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [delay]);
+
+  useEffect(() => {
+    if (!mountRef.current || !isVisible) return;
 
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -135,9 +144,16 @@ const WebGLBackground: React.FC = () => {
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [isVisible]);
 
-  return <div ref={mountRef} className="webgl-background" />;
+  return (
+    <div 
+      ref={mountRef} 
+      className={`webgl-background ${
+        isVisible ? 'opacity-60' : 'opacity-0'
+      }`} 
+    />
+  );
 };
 
 export default WebGLBackground;
