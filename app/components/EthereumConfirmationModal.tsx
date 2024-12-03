@@ -130,6 +130,7 @@ export default function EthereumConfirmationModal({
       isOpen={isOpen} 
       onClose={onClose}
       containerRef={containerRef}
+      borderColor="#77be44"
     >
       <div className="flex flex-col h-full">
         <div className="flex-none">
@@ -159,15 +160,16 @@ export default function EthereumConfirmationModal({
               <span className="text-white">{slippage}%</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Uruloki Fee</span>
-              <span className="text-white">{JUPITER_FEE_BPS / 100}%</span>
-            </div>
-            <div className="flex justify-between items-center">
               <span className="text-gray-400">Network</span>
               <span className="text-white">Ethereum</span>
             </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Uruloki Fee</span>
+              <span className="text-white">{JUPITER_FEE_BPS / 100}%</span>
+            </div>
             <p className="text-xs text-gray-500 mt-2">
-              A {JUPITER_FEE_BPS / 100}% fee is applied to help maintain and improve our services
+              A {JUPITER_FEE_BPS / 100}% fee is applied to help maintain and improve our services. 
+              These fees are used to buy and burn $TSUKA tokens, reducing the total supply.
             </p>
           </div>
 

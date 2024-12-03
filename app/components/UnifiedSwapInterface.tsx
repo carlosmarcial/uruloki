@@ -916,8 +916,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         px-4 py-2 
         hover:bg-[#2c2d33]
         transition-colors
-        ml-2                   // Keep it on the right
-        flex-shrink-0          // Prevent button from shrinking
+        ml-2                   
+        flex-shrink-0          
       `}
     >
       {token ? (
@@ -934,7 +934,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <span className="text-white text-sm">{token.symbol}</span>
         </>
       ) : (
-        <span className="text-white text-sm">
+        <span className={`text-sm ${
+          activeChain === 'ethereum' 
+            ? 'text-[#77be44]' 
+            : 'text-[#9333ea]'
+        }`}>
           Select Token
         </span>
       )}
@@ -1817,8 +1821,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
           {/* Swap arrow */}
           <div className="flex justify-center mb-4">
-            <div className="bg-gray-800 p-2 rounded-full cursor-pointer" onClick={swapTokens}>
-              <ArrowUpDown className="h-6 w-6 text-gray-400" />
+            <div 
+              className="bg-gray-800 p-2 rounded-full cursor-pointer hover:bg-gray-700 transition-colors"
+              onClick={swapTokens}
+            >
+              <ArrowUpDown className="h-6 w-6 text-[#9333ea]" /> {/* Updated to purple */}
             </div>
           </div>
 
@@ -2378,7 +2385,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             className="bg-gray-800 p-2 rounded-full cursor-pointer hover:bg-gray-700 transition-colors"
             onClick={swapTokens}
           >
-            <ArrowUpDown className="h-6 w-6 text-gray-400" />
+            <ArrowUpDown className="h-6 w-6 text-[#77be44]" /> {/* Updated to green */}
           </div>
         </div>
 

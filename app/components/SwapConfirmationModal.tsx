@@ -134,15 +134,16 @@ export default function SwapConfirmationModal({
               <span className="text-white">{slippage}%</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Uruloki Fee</span>
-              <span className="text-white">{JUPITER_FEE_BPS / 100}%</span>
-            </div>
-            <div className="flex justify-between items-center">
               <span className="text-gray-400">Network</span>
               <span className="text-white">Solana</span>
             </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Uruloki Fee</span>
+              <span className="text-white">{JUPITER_FEE_BPS / 100}%</span>
+            </div>
             <p className="text-xs text-gray-500 mt-2">
-              A {JUPITER_FEE_BPS / 100}% fee is applied to help maintain and improve our services
+              A {JUPITER_FEE_BPS / 100}% fee is applied to help maintain and improve our services. 
+              These fees are also used to buy and burn $TSUKA tokens, reducing the total supply.
             </p>
           </div>
 
