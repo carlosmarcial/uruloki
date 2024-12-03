@@ -82,11 +82,21 @@ Please provide a comprehensive technical analysis focusing on:
 5. Short-term Technical Outlook (24-48h)
 
 Important formatting instructions:
-1. Provide your analysis in plain text without any markdown formatting, asterisks, or special characters.
-2. Use simple numbered sections without any text styling or emphasis markers.
-3. Always begin the Price Action Analysis section by stating the current price (${marketData.price.usd}).
+1. Each numbered section should be on its own line
+2. Add a blank line after each section heading
+3. Use simple numbered sections (1., 2., etc.)
+4. Start each major section with the number, period, and title on one line
+5. Always begin the Price Action Analysis section by stating the current price (${marketData.price.usd})
 
-Include specific numbers and percentages where relevant. Focus on technical aspects and market structure, with particular attention to the RSI indicators and what they suggest about market momentum.`;
+Format example:
+1. Price Action Analysis
+
+[Analysis text here...]
+
+2. Volume Analysis & Trading Activity
+
+[Analysis text here...]
+`;
 
     console.log('Starting streaming analysis for:', token.symbol);
 

@@ -2481,8 +2481,9 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         <div className="w-full xl:w-[58%] bg-gray-800 rounded-lg overflow-hidden" style={{ height: '550px' }}>
           <TokenChart 
             ref={chartRef}
-            selectedToken={activeChain === 'solana' ? buyToken : buyToken} // Allow both chains
+            selectedToken={activeChain === 'solana' ? buyToken : buyToken}
             chainId={activeChain === 'solana' ? 'solana' : chainId}
+            activeChain={activeChain}
           />
         </div>
         <div className="w-full xl:w-[42%] flex flex-col">

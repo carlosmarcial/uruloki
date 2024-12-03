@@ -14,6 +14,7 @@ interface Token {
 interface TokenChartProps {
   selectedToken: Token | null;
   chainId?: number | string;
+  activeChain: 'ethereum' | 'solana';
 }
 
 export interface TokenChartRef {
@@ -84,9 +85,8 @@ const setCachedAnalysis = (tokenAddress: string, network: string, analysis: stri
   }
 };
 
-const StreamingText = ({ text }: { text: string }) => {
+const StreamingText = ({ text, activeChain }: { text: string; activeChain: 'ethereum' | 'solana' }) => {
   const [displayText, setDisplayText] = useState<string[]>([]);
-  const GRADIENT_WORDS = 3; // Number of recent words to show gradient effect
   
   useEffect(() => {
     const words = text.split(' ');
@@ -98,28 +98,37 @@ const StreamingText = ({ text }: { text: string }) => {
       if (newWords[0]) {
         const timer = setTimeout(() => {
           setDisplayText(prev => [...prev, newWords[0]]);
-        }, 50); // Adjust speed as needed
+        }, 50);
         return () => clearTimeout(timer);
       }
     }
   }, [text, displayText]);
 
+  // Process text to add formatting
+  const formatText = (text: string) => {
+    const lines = text.split('\n');
+    return lines.map((line, index) => {
+      // Check if line is a heading (starts with a number followed by a period)
+      if (/^\d+\./.test(line)) {
+        return (
+          <div key={index} className="mb-4 mt-8 first:mt-0">
+            <span className={`${
+              activeChain === 'ethereum' 
+                ? 'text-[#77be44]' 
+                : 'text-purple-500'
+            } font-semibold`}>
+              {line}
+            </span>
+          </div>
+        );
+      }
+      return <div key={index} className="mb-2">{line}</div>;
+    });
+  };
+
   return (
     <div className="text-white whitespace-pre-wrap p-4">
-      {displayText.map((word, index) => {
-        const isRecent = displayText.length - index <= GRADIENT_WORDS;
-        const order = displayText.length - index;
-        
-        return (
-          <span 
-            key={index} 
-            className={isRecent ? `gradient-text gradient-${order}` : ''}
-            style={isRecent ? { animationDelay: `${(GRADIENT_WORDS - order) * 0.2}s` } : undefined}
-          >
-            {word}{' '}
-          </span>
-        );
-      })}
+      {formatText(displayText.join(' '))}
     </div>
   );
 };
@@ -164,7 +173,11 @@ const formatPrice = (price: number): string => {
   return numPrice.toFixed(6);
 };
 
-const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, chainId }, ref) => {
+const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ 
+  selectedToken, 
+  chainId,
+  activeChain
+}, ref) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -761,7 +774,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800">
         <button
           onClick={() => setShowAnalysisModal(false)}
-          className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
+          className={`px-4 py-2 rounded-sm transition-colors duration-200 ${
             !showAnalysisModal 
               ? 'bg-gray-800 text-white' 
               : 'text-gray-400 hover:text-white'
@@ -776,10 +789,10 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
               fetchTokenAnalysis(selectedToken, getNetworkIdentifier(chainId));
             }
           }}
-          className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
+          className={`px-4 py-2 rounded-sm transition-colors duration-200 ${
             showAnalysisModal 
               ? 'bg-gray-800 text-white' 
-              : 'ai-tab-button'
+              : `ai-tab-button ${activeChain}-chain`
           }`}
         >
           <span className="ai-tab-text">AI Technical Analysis</span>
@@ -822,7 +835,10 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
                 ) : analysis.error ? (
                   <div className="text-red-500 p-4">{analysis.error}</div>
                 ) : (
-                  <StreamingText text={analysis.analysis} />
+                  <StreamingText 
+                    text={analysis.analysis} 
+                    activeChain={activeChain}
+                  />
                 )}
               </div>
             </div>
@@ -857,95 +873,43 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ selectedToken, 
           scrollbar-color: rgba(75, 85, 99, 0.8) rgba(31, 41, 55, 0.5);
         }
 
-        .gradient-text {
-          background: linear-gradient(90deg, #22c55e, #f97316);
-          background-size: 200% auto;
-          color: transparent;
-          -webkit-background-clip: text;
-          background-clip: text;
-          display: inline-block;
-          animation: gradient 2s ease-in-out forwards;
-        }
-
-        @keyframes gradient {
-          0% {
-            background-position: 0% 50%;
-            opacity: 0.7;
-          }
-          50% {
-            background-position: 100% 50%;
-            opacity: 1;
-          }
-          100% {
-            background-position: 0% 50%;
-            opacity: 1;
-            background: none;
-            color: white;
-          }
-        }
-
-        .gradient-1 { opacity: 1; }
-        .gradient-2 { opacity: 0.9; }
-        .gradient-3 { opacity: 0.8; }
-
-        .ai-tab-button {
-          position: relative;
-          overflow: hidden;
-        }
-
         .ai-tab-text {
           position: relative;
-          background-clip: text;
-          -webkit-background-clip: text;
           color: #9ca3af;
           transition: color 0.3s ease;
         }
 
-        .ai-tab-button:not(.bg-gray-800) .ai-tab-text {
-          animation: glowPulse 6s ease-in-out infinite;
+        /* Update the animation for Ethereum */
+        .ethereum-chain:not(.bg-gray-800) .ai-tab-text {
+          animation: ethereumPulse 3s ease-in-out infinite;
         }
 
-        @keyframes glowPulse {
-          0%, 60% {
+        /* Update the animation for Solana */
+        .solana-chain:not(.bg-gray-800) .ai-tab-text {
+          animation: solanaPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes ethereumPulse {
+          0% {
             color: #9ca3af;
-            background-image: none;
           }
-          65%, 75% {
-            background-image: linear-gradient(
-              90deg,
-              #22c55e,
-              #f97316,
-              #22c55e
-            );
-            background-size: 200% auto;
-            color: transparent;
-            background-position: 0% center;
-          }
-          80%, 85% {
-            background-image: linear-gradient(
-              90deg,
-              #22c55e,
-              #f97316,
-              #22c55e
-            );
-            background-size: 200% auto;
-            color: transparent;
-            background-position: 100% center;
-          }
-          90%, 95% {
-            background-image: linear-gradient(
-              90deg,
-              #22c55e,
-              #f97316,
-              #22c55e
-            );
-            background-size: 200% auto;
-            color: transparent;
-            background-position: 0% center;
+          50% {
+            color: #77be44;
           }
           100% {
             color: #9ca3af;
-            background-image: none;
+          }
+        }
+
+        @keyframes solanaPulse {
+          0% {
+            color: #9ca3af;
+          }
+          50% {
+            color: #9333ea;
+          }
+          100% {
+            color: #9ca3af;
           }
         }
 

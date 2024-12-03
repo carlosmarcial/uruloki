@@ -61,12 +61,12 @@ const Marquee: React.FC<MarqueeProps> = ({
             }}
           >
             <div ref={contentRef} className="inline-block">
-              <div className="bg-[#1a1b1f] text-transparent bg-clip-text font-bold">
+              <div className="bg-[#1a1b1f] text-transparent bg-clip-text font-bold py-2">
                 {children}
               </div>
             </div>
             <div className="inline-block">
-              <div className="bg-[#1a1b1f] text-transparent bg-clip-text font-bold">
+              <div className="bg-[#1a1b1f] text-transparent bg-clip-text font-bold py-2">
                 {children}
               </div>
             </div>
