@@ -10,7 +10,7 @@ interface ChainToggleProps {
 
 const ChainToggle: React.FC<ChainToggleProps> = ({ activeChain, setActiveChain }) => {
   return (
-    <div className="flex justify-center items-center h-16 mb-4">
+    <div className="flex justify-center items-center pt-8 pb-2">
       <div className="flex bg-gray-800 rounded-full p-1">
         <motion.button
           whileHover={activeChain !== 'ethereum' ? { scale: 1.05 } : {}}
