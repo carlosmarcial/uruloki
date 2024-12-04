@@ -189,6 +189,8 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
     loading: false,
     error: null
   });
+  const [isBlurred, setIsBlurred] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
 
   // Helper function to get network identifier for GeckoTerminal
   const getNetworkIdentifier = (chainId: number | string | undefined) => {
@@ -744,6 +746,19 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
     }
   }));
 
+  const handleAITabClick = () => {
+    setShowAnalysisModal(true);
+    setIsBlurred(true);
+    if (selectedToken) {
+      fetchTokenAnalysis(selectedToken, getNetworkIdentifier(chainId));
+    }
+  };
+
+  const handleCloseAnalysis = () => {
+    setShowAnalysisModal(false);
+    setIsBlurred(false);
+  };
+
   if (isLoading) {
     return (
       <div className="w-full h-full flex items-center justify-center text-white">
@@ -769,162 +784,185 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
   }
 
   return (
-    <div ref={chartContainerRef} className="w-full h-full flex flex-col">
-      {/* Tab Navigation */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800">
-        <button
-          onClick={() => setShowAnalysisModal(false)}
-          className={`px-4 py-2 rounded-sm transition-colors duration-200 ${
-            !showAnalysisModal 
-              ? 'bg-gray-800 text-white' 
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          Price Chart
-        </button>
-        <button
-          onClick={() => {
-            setShowAnalysisModal(true);
-            if (selectedToken) {
-              fetchTokenAnalysis(selectedToken, getNetworkIdentifier(chainId));
-            }
-          }}
-          className={`px-4 py-2 rounded-sm transition-colors duration-200 ${
-            showAnalysisModal 
-              ? 'bg-gray-800 text-white' 
-              : `ai-tab-button ${activeChain}-chain`
-          }`}
-        >
-          <span className="ai-tab-text">AI Technical Analysis</span>
-        </button>
-      </div>
-
-      {/* Content Area */}
-      <div className="flex-1 relative">
-        {/* Chart iframe */}
-        <div className={`w-full h-full transition-opacity duration-200 ${
-          showAnalysisModal ? 'opacity-0 pointer-events-none' : 'opacity-100'
+    <>
+      {/* Global blur overlay when analysis is open */}
+      {showAnalysisModal && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 cursor-pointer"
+          onClick={handleCloseAnalysis}
+        />
+      )}
+      <div ref={chartContainerRef} className="w-full h-full flex flex-col">
+        {/* Tab Navigation */}
+        <div className={`flex items-stretch gap-2 px-4 bg-gray-900 border-b border-gray-800 relative ${
+          showAnalysisModal ? 'z-50' : ''
         }`}>
-          {chartUrl ? (
-            <iframe
-              ref={iframeRef}
-              src={chartUrl}
-              className="w-full h-full"
-              title="GeckoTerminal Chart"
-              frameBorder="0"
-              allow="clipboard-write"
-              allowFullScreen
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-500">
-              {selectedToken ? 'No chart data available' : 'Select a token to view its chart'}
+          <button
+            onClick={() => {
+              setShowAnalysisModal(false);
+              setIsBlurred(false);
+            }}
+            className={`px-4 py-3 rounded-t-lg transition-colors duration-200 relative flex items-center ${
+              !showAnalysisModal 
+                ? 'bg-gray-800 text-white after:absolute after:bottom-[-2px] after:left-0 after:right-0 after:h-[2px] after:bg-gray-800' 
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Price Chart
+          </button>
+          <button
+            onClick={handleAITabClick}
+            className={`px-4 py-3 rounded-t-lg transition-colors duration-200 relative flex items-center ${
+              showAnalysisModal 
+                ? 'bg-gray-800 text-white after:absolute after:bottom-[-2px] after:left-0 after:right-0 after:h-[2px] after:bg-gray-800' 
+                : `ai-tab-button ${activeChain}-chain`
+            }`}
+          >
+            <span className="ai-tab-text">AI Technical Analysis</span>
+          </button>
+          {showAnalysisModal && (
+            <button
+              onClick={handleCloseAnalysis}
+              className="ml-auto mr-2 text-gray-400 hover:text-white transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          )}
+        </div>
+
+        {/* Content Area */}
+        <div className={`flex-1 relative ${showAnalysisModal ? 'z-50' : ''}`}>
+          {/* Chart iframe with blur effect */}
+          <div 
+            className={`w-full h-full transition-all duration-300 ${
+              showAnalysisModal ? 'blur-sm mt-[-1px]' : ''
+            }`}
+          >
+            {chartUrl ? (
+              <iframe
+                ref={iframeRef}
+                src={chartUrl}
+                className="w-full h-full"
+                title="GeckoTerminal Chart"
+                frameBorder="0"
+                allow="clipboard-write"
+                allowFullScreen
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-500">
+                {selectedToken ? 'No chart data available' : 'Select a token to view its chart'}
+              </div>
+            )}
+          </div>
+
+          {/* Analysis Content */}
+          {showAnalysisModal && (
+            <div 
+              className="absolute inset-0 bg-gray-900/95 backdrop-blur-sm shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative w-full h-full flex flex-col p-6">
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                  {analysis.loading ? (
+                    <div className="flex items-center justify-center h-64">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+                    </div>
+                  ) : analysis.error ? (
+                    <div className="text-red-500 p-4">{analysis.error}</div>
+                  ) : (
+                    <div className="prose prose-invert" style={{ maxWidth: '85ch' }}>
+                      <StreamingText 
+                        text={analysis.analysis} 
+                        activeChain={activeChain}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Analysis Content */}
-        {showAnalysisModal && (
-          <div className="absolute inset-0 bg-gray-900/95 backdrop-blur-sm">
-            <div className="relative w-full h-full flex flex-col p-6">
-              {/* Analysis Content */}
-              <div className="flex-1 overflow-auto custom-scrollbar">
-                {analysis.loading ? (
-                  <div className="flex items-center justify-center h-64">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
-                  </div>
-                ) : analysis.error ? (
-                  <div className="text-red-500 p-4">{analysis.error}</div>
-                ) : (
-                  <StreamingText 
-                    text={analysis.analysis} 
-                    activeChain={activeChain}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Keep the existing styles */}
+        <style jsx global>{`
+          .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+          }
+
+          .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(31, 41, 55, 0.5);
+            border-radius: 4px;
+          }
+
+          .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(75, 85, 99, 0.8);
+            border-radius: 4px;
+          }
+
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(107, 114, 128, 0.8);
+          }
+
+          /* For Firefox */
+          .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(75, 85, 99, 0.8) rgba(31, 41, 55, 0.5);
+          }
+
+          .ai-tab-text {
+            position: relative;
+            color: #9ca3af;
+            transition: color 0.3s ease;
+          }
+
+          /* Update the animation for Ethereum */
+          .ethereum-chain:not(.bg-gray-800) .ai-tab-text {
+            animation: ethereumPulse 3s ease-in-out infinite;
+          }
+
+          /* Update the animation for Solana */
+          .solana-chain:not(.bg-gray-800) .ai-tab-text {
+            animation: solanaPulse 3s ease-in-out infinite;
+          }
+
+          @keyframes ethereumPulse {
+            0% {
+              color: #9ca3af;
+            }
+            50% {
+              color: #77be44;
+            }
+            100% {
+              color: #9ca3af;
+            }
+          }
+
+          @keyframes solanaPulse {
+            0% {
+              color: #9ca3af;
+            }
+            50% {
+              color: #9333ea;
+            }
+            100% {
+              color: #9ca3af;
+            }
+          }
+
+          /* Simple white color on hover */
+          .ai-tab-button:hover .ai-tab-text {
+            color: white;
+          }
+
+          /* Active state */
+          .bg-gray-800 .ai-tab-text {
+            color: white;
+            animation: none;
+          }
+        `}</style>
       </div>
-
-      {/* Keep the existing styles */}
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(31, 41, 55, 0.5);
-          border-radius: 4px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(75, 85, 99, 0.8);
-          border-radius: 4px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(107, 114, 128, 0.8);
-        }
-
-        /* For Firefox */
-        .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(75, 85, 99, 0.8) rgba(31, 41, 55, 0.5);
-        }
-
-        .ai-tab-text {
-          position: relative;
-          color: #9ca3af;
-          transition: color 0.3s ease;
-        }
-
-        /* Update the animation for Ethereum */
-        .ethereum-chain:not(.bg-gray-800) .ai-tab-text {
-          animation: ethereumPulse 3s ease-in-out infinite;
-        }
-
-        /* Update the animation for Solana */
-        .solana-chain:not(.bg-gray-800) .ai-tab-text {
-          animation: solanaPulse 3s ease-in-out infinite;
-        }
-
-        @keyframes ethereumPulse {
-          0% {
-            color: #9ca3af;
-          }
-          50% {
-            color: #77be44;
-          }
-          100% {
-            color: #9ca3af;
-          }
-        }
-
-        @keyframes solanaPulse {
-          0% {
-            color: #9ca3af;
-          }
-          50% {
-            color: #9333ea;
-          }
-          100% {
-            color: #9ca3af;
-          }
-        }
-
-        /* Simple white color on hover */
-        .ai-tab-button:hover .ai-tab-text {
-          color: white;
-        }
-
-        /* Active state */
-        .bg-gray-800 .ai-tab-text {
-          color: white;
-          animation: none;
-        }
-      `}</style>
-    </div>
+    </>
   );
 });
 

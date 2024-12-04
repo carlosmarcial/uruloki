@@ -462,3 +462,21 @@ body {
 .loading-indicator {
   @apply text-center py-4 text-gray-400;
 }
+
+/* Update blur effects */
+.blur-sm {
+  filter: blur(4px);
+  transition: all 0.3s ease;
+}
+
+/* Ensure content above blur is sharp */
+.backdrop-blur-sm {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+/* Add depth to analysis panel */
+.shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}

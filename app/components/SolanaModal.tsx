@@ -22,6 +22,11 @@ export function SolanaModal({
 }: SolanaModalProps) {
   const [modalStyle, setModalStyle] = useState<React.CSSProperties>({});
   const confettiRef = useRef<ConfettiEffectRef>(null);
+  const [isClosing, setIsClosing] = useState(false);
+
+  const handleClose = () => {
+    onClose();
+  };
 
   useEffect(() => {
     const updateModalPosition = () => {
@@ -71,15 +76,15 @@ export function SolanaModal({
           >
             <div 
               className="fixed inset-0 bg-black/40 backdrop-blur-[2px]"
-              onClick={onClose}
+              onClick={handleClose}
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
               transition={{ 
                 duration: 0.2,
-                ease: "easeOut"
+                ease: "easeInOut"
               }}
               style={{
                 ...modalStyle,
@@ -90,7 +95,7 @@ export function SolanaModal({
               <div className="h-full p-4 flex flex-col relative">
                 <ConfettiEffect ref={confettiRef} />
                 <button
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
                 >
                   <X className="h-6 w-6" />
