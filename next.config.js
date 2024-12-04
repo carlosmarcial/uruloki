@@ -4,10 +4,12 @@ const path = require('path');
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['assets.coingecko.com'],
+    domains: ['assets.coingecko.com', 'ipfs.io'],
     deviceSizes: [24, 32, 48, 64, 96],
     imageSizes: [24, 32, 48, 64, 96],
     formats: ['image/webp'],
+    dangerouslyAllowSVG: true,
+    unoptimized: true,
   },
   env: {
     ZEROX_API_KEY: process.env.ZEROX_API_KEY,

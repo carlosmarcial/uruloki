@@ -2493,8 +2493,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       <div className="w-full mb-4">
         <ChainToggle activeChain={activeChain} setActiveChain={setActiveChain} />
       </div>
-      <div className="flex flex-col xl:flex-row gap-2 w-full">
-        <div className={`w-full xl:w-[58%] ${darkThemeClasses.secondary} rounded-lg overflow-hidden`} style={{ height: '550px' }}>
+      <div className="flex flex-col xl:flex-row gap-4 w-full justify-center items-start">
+        <div className={`w-full xl:w-[52.5%] ${darkThemeClasses.secondary} rounded-lg overflow-hidden`} style={{ height: '550px' }}>
           <TokenChart 
             ref={chartRef}
             selectedToken={activeChain === 'solana' ? buyToken : buyToken}
@@ -2502,13 +2502,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             activeChain={activeChain}
           />
         </div>
-        <div className="w-full xl:w-[42%] flex flex-col">
+        <div className="w-full xl:w-[30%] flex flex-col" style={{ height: '550px' }}>
           {activeChain === 'ethereum' ? (
-            <div className={`flex-grow ${darkThemeClasses.primary} rounded-lg relative`}>
+            <div className={`h-full ${darkThemeClasses.primary} rounded-lg relative`}>
               {renderEthereumSwapInterface()}
             </div>
           ) : (
-            <div className="flex-grow bg-gray-900 rounded-lg relative">
+            <div className="h-full bg-gray-900 rounded-lg relative">
               {renderSolanaSwapInterface()}
               <SwapConfirmationModal
                 isOpen={isConfirmationModalOpen}
