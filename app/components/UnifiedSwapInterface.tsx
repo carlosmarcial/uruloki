@@ -240,7 +240,9 @@ const useSolanaTokenBalance = (
         // Use the imported SOL_MINT_ADDRESSES
         if (SOL_MINT_ADDRESSES.includes(token.address)) {
           const solBalance = await connection.getBalance(publicKey);
-          setBalance(solBalance / LAMPORTS_PER_SOL);
+          const formattedBalance = solBalance / LAMPORTS_PER_SOL;
+          // Format balance based on value
+          setBalance(formattedBalance);
         } else {
           const tokenMint = new PublicKey(token.address);
           const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
@@ -248,8 +250,9 @@ const useSolanaTokenBalance = (
           });
 
           if (tokenAccounts.value[0]) {
-            const balance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
-            setBalance(balance);
+            const rawBalance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
+            // Format balance based on value
+            setBalance(rawBalance);
           } else {
             setBalance(0);
           }
@@ -1795,7 +1798,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             <div className="flex items-center bg-gray-800 rounded-lg p-3">
               <input
                 type="text"
-                value={formatNumberWithCommas(sellAmount)}
+                value={formatDisplayAmount(sellAmount)}
                 onChange={(e) => {
                   // Remove commas from the input
                   const rawValue = e.target.value.replace(/,/g, '');
@@ -1818,7 +1821,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             <div className="flex justify-between mt-2 text-sm">
               <span className="text-gray-400">
                 {solanaTokenBalance !== null && sellToken && (
-                  <>Balance: {solanaTokenBalance.toFixed(6)} {sellToken.symbol}</>
+                  formatBalanceDisplay(solanaTokenBalance, sellToken.symbol)
                 )}
               </span>
             </div>
@@ -1830,7 +1833,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               className={`${darkThemeClasses.accent} p-2 rounded-full cursor-pointer ${darkThemeClasses.hover} transition-colors`}
               onClick={swapTokens}
             >
-              <ArrowUpDown className="h-6 w-6 text-[#77be44]" /> {/* Changed back to Ethereum green */}
+              <ArrowUpDown className={`h-6 w-6 ${activeChain === 'ethereum' ? 'text-[#77be44]' : 'text-[#9333ea]'}`} />
             </div>
           </div>
 
@@ -1842,7 +1845,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             <div className="flex items-center bg-gray-800 rounded-lg p-3">
               <input
                 type="text"
-                value={formatNumberWithCommas(buyAmount)}
+                value={formatDisplayAmount(buyAmount)}
                 readOnly
                 className="bg-transparent text-white text-2xl w-full outline-none"
                 placeholder="0"
@@ -2156,9 +2159,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Add this helper function at the top level
   const formatBalance = (value: bigint, decimals: number, symbol: string) => {
     const formatted = formatUnits(value, decimals);
-    // Parse to float and fix to 4 decimal places
-    const truncated = parseFloat(formatted).toFixed(4);
-    return `${truncated} ${symbol}`;
+    const num = parseFloat(formatted);
+    
+    // For numbers >= 1, limit to 2 decimal places
+    if (Math.abs(num) >= 1) {
+      return `${num.toFixed(2)} ${symbol}`;
+    }
+    
+    // For numbers < 1, keep all decimal places
+    return `${formatted} ${symbol}`;
   };
 
   // Add a separate useEffect to monitor slippage changes
@@ -2363,10 +2372,22 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           </div>
           <div className={`flex items-center ${darkThemeClasses.secondary} rounded-lg p-3`}>
             <input
-              type="number"
-              value={sellAmount}
-              onChange={(e) => setSellAmount(e.target.value)}
-              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              type="text"
+              value={formatDisplayAmount(sellAmount)}
+              onChange={(e) => {
+                // Remove commas from the input
+                const rawValue = e.target.value.replace(/,/g, '');
+                
+                // Allow empty string, numbers, and decimals
+                if (rawValue === '' || /^\d*\.?\d*$/.test(rawValue)) {
+                  // Prevent more than one decimal point
+                  const decimalPoints = (rawValue.match(/\./g) || []).length;
+                  if (decimalPoints <= 1) {
+                    setSellAmount(rawValue);
+                  }
+                }
+              }}
+              className="bg-transparent text-white text-2xl w-full outline-none"
               placeholder="0"
             />
             {renderTokenSelector(sellToken, () => openTokenSelectModal('sell'))}
@@ -2375,14 +2396,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             <span className="text-gray-400">
               {sellToken && (
                 <>
-                  Balance:{' '}
                   {sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() 
                     ? ethBalance 
-                      ? formatBalance(ethBalance.value, 18, 'ETH')
-                      : '0 ETH'
+                      ? formatBalanceDisplay(parseFloat(formatUnits(ethBalance.value, 18)), 'ETH')
+                      : 'Balance: 0 ETH'
                     : sellTokenBalance
-                      ? formatBalance(sellTokenBalance.value, sellTokenBalance.decimals, sellTokenBalance.symbol)
-                      : `0 ${sellToken.symbol}`
+                      ? formatBalanceDisplay(parseFloat(formatUnits(sellTokenBalance.value, sellTokenBalance.decimals)), sellTokenBalance.symbol)
+                      : `Balance: 0 ${sellToken.symbol}`
                   }
                 </>
               )}
@@ -2401,7 +2421,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             className={`${darkThemeClasses.accent} p-2 rounded-full cursor-pointer ${darkThemeClasses.hover} transition-colors`}
             onClick={swapTokens}
           >
-            <ArrowUpDown className="h-6 w-6 text-[#77be44]" /> {/* Changed back to Ethereum green */}
+            <ArrowUpDown className={`h-6 w-6 ${activeChain === 'ethereum' ? 'text-[#77be44]' : 'text-[#9333ea]'}`} />
           </div>
         </div>
 
@@ -2412,10 +2432,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           </div>
           <div className={`flex items-center ${darkThemeClasses.secondary} rounded-lg p-3`}>
             <input
-              type="number"
-              value={buyAmount}
+              type="text"
+              value={formatDisplayAmount(buyAmount)}
               readOnly
-              className="bg-transparent text-white text-2xl w-full outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="bg-transparent text-white text-2xl w-full outline-none"
               placeholder="0"
             />
             {renderTokenSelector(buyToken, () => openTokenSelectModal('buy'))}
@@ -2668,6 +2688,19 @@ const getAddressLookupTableAccounts = async (
     }
     return acc;
   }, new Array<AddressLookupTableAccount>());
+};
+
+// Add this helper function for formatting balances consistently
+const formatBalanceDisplay = (balance: number | null, symbol: string) => {
+  if (balance === null) return '';
+  
+  // For numbers >= 1, limit to 2 decimal places
+  if (Math.abs(balance) >= 1) {
+    return `Balance: ${balance.toFixed(2)} ${symbol}`;
+  }
+  
+  // For numbers < 1, keep all decimal places
+  return `Balance: ${balance} ${symbol}`;
 };
 
 

@@ -89,10 +89,22 @@ export const fetchTokenPrice = async (tokenAddress: string, chain: string) => {
 
 // Helper function to format USD values
 export const formatUSDValue = (value: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value);
+  if (!value) return '$0.00';
+  
+  // Convert to string and remove existing commas
+  const cleanValue = value.toString().replace(/,/g, '');
+  
+  // Split into whole and decimal parts
+  const [wholePart, decimalPart] = cleanValue.split('.');
+  
+  // Add commas to whole number part
+  const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  
+  // If number is >= 1, limit to 2 decimal places
+  if (Math.abs(value) >= 1) {
+    return `$${formattedWholePart}${decimalPart ? `.${decimalPart.slice(0, 2)}` : '.00'}`;
+  }
+  
+  // For numbers < 1, keep all decimal places
+  return `$${formattedWholePart}${decimalPart ? `.${decimalPart}` : '.00'}`;
 };
