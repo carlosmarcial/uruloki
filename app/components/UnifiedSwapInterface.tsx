@@ -84,8 +84,13 @@ import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceU
 import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
 
-
-
+// Update these color utility classes
+const darkThemeClasses = {
+  primary: 'bg-gray-900', // Match the token chart background
+  secondary: 'bg-gray-800', // Keep existing secondary color
+  accent: 'bg-gray-800', // Match secondary for consistency
+  hover: 'hover:bg-gray-700', // Lighter hover state
+};
 
 // Add this ERC20 ABI constant
 const erc20Abi = [
@@ -1822,10 +1827,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           {/* Swap arrow */}
           <div className="flex justify-center mb-4">
             <div 
-              className="bg-gray-800 p-2 rounded-full cursor-pointer hover:bg-gray-700 transition-colors"
+              className={`${darkThemeClasses.accent} p-2 rounded-full cursor-pointer ${darkThemeClasses.hover} transition-colors`}
               onClick={swapTokens}
             >
-              <ArrowUpDown className="h-6 w-6 text-[#9333ea]" /> {/* Updated to purple */}
+              <ArrowUpDown className="h-6 w-6 text-[#77be44]" /> {/* Changed back to Ethereum green */}
             </div>
           </div>
 
@@ -2305,7 +2310,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Add this before the return statement
   const renderEthereumSwapInterface = () => (
-    <div ref={ethereumSwapContainerRef} className="flex-grow bg-gray-900 rounded-lg p-4 flex flex-col h-full">
+    <div ref={ethereumSwapContainerRef} className={`flex-grow ${darkThemeClasses.primary} rounded-lg p-4 flex flex-col h-full`}>
       {/* Top section with wallet connect only */}
       <div>
         <ConnectButton.Custom>
@@ -2356,7 +2361,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Sell</span>
           </div>
-          <div className="flex items-center bg-gray-800 rounded-lg p-3">
+          <div className={`flex items-center ${darkThemeClasses.secondary} rounded-lg p-3`}>
             <input
               type="number"
               value={sellAmount}
@@ -2393,10 +2398,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         {/* Swap arrow */}
         <div className="flex justify-center mb-4">
           <div 
-            className="bg-gray-800 p-2 rounded-full cursor-pointer hover:bg-gray-700 transition-colors"
+            className={`${darkThemeClasses.accent} p-2 rounded-full cursor-pointer ${darkThemeClasses.hover} transition-colors`}
             onClick={swapTokens}
           >
-            <ArrowUpDown className="h-6 w-6 text-[#77be44]" /> {/* Updated to green */}
+            <ArrowUpDown className="h-6 w-6 text-[#77be44]" /> {/* Changed back to Ethereum green */}
           </div>
         </div>
 
@@ -2405,7 +2410,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <div className="flex justify-between mb-2">
             <span className="text-gray-400">Buy</span>
           </div>
-          <div className="flex items-center bg-gray-800 rounded-lg p-3">
+          <div className={`flex items-center ${darkThemeClasses.secondary} rounded-lg p-3`}>
             <input
               type="number"
               value={buyAmount}
@@ -2489,7 +2494,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         <ChainToggle activeChain={activeChain} setActiveChain={setActiveChain} />
       </div>
       <div className="flex flex-col xl:flex-row gap-2 w-full">
-        <div className="w-full xl:w-[58%] bg-gray-800 rounded-lg overflow-hidden" style={{ height: '550px' }}>
+        <div className={`w-full xl:w-[58%] ${darkThemeClasses.secondary} rounded-lg overflow-hidden`} style={{ height: '550px' }}>
           <TokenChart 
             ref={chartRef}
             selectedToken={activeChain === 'solana' ? buyToken : buyToken}
@@ -2499,7 +2504,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         </div>
         <div className="w-full xl:w-[42%] flex flex-col">
           {activeChain === 'ethereum' ? (
-            <div className="flex-grow bg-gray-900 rounded-lg relative">
+            <div className={`flex-grow ${darkThemeClasses.primary} rounded-lg relative`}>
               {renderEthereumSwapInterface()}
             </div>
           ) : (

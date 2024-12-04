@@ -174,6 +174,35 @@ const formatPrice = (price: number): string => {
   return numPrice.toFixed(6);
 };
 
+interface GeckoTerminalPool {
+  id: string;
+  attributes?: {
+    name?: string;
+    dex_id?: string;
+    reserve_in_usd?: string;
+    market_cap_usd?: string;
+    fdv_usd?: string;
+    price_change_percentage?: {
+      h1?: number;
+      h6?: number;
+      h24?: number;
+    };
+    volume_usd?: {
+      h1?: number;
+      h6?: number;
+      h24?: number;
+    };
+    transactions?: {
+      h24?: {
+        buys?: number;
+        sells?: number;
+        buyers?: number;
+        sellers?: number;
+      };
+    };
+  };
+}
+
 const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({ 
   selectedToken, 
   chainId,
@@ -494,14 +523,14 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
 
       const formattedAddress = formatTokenAddress(token.address, network);
 
-      // Get pool data
+      // Get pool data with increased limit for better liquidity calculation
       const poolsResponse = await axios.get(
         `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${formattedAddress}/pools`,
         {
           params: {
             page: 1,
-            limit: 1,
-            sort: 'h24_volume_usd_desc'
+            limit: 100,
+            sort: 'h24_volume_usd_liquidity_desc'
           },
           headers: {
             'Accept': 'application/json;version=20230302'
@@ -513,13 +542,19 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
         throw new Error(`No trading pools found for ${token.symbol}`);
       }
 
-      const pool = poolsResponse.data.data[0];
-      const poolId = pool.id;
-      const [networkId, poolAddress] = poolId.split('_');
+      // Calculate total liquidity across all pools
+      const allPools: GeckoTerminalPool[] = poolsResponse.data.data;
+      let totalLiquidity = 0;
+      const topPool = allPools[0];
+      
+      allPools.forEach((pool: GeckoTerminalPool) => {
+        const poolLiquidity = Number(pool.attributes?.reserve_in_usd || 0);
+        totalLiquidity += poolLiquidity;
+      });
 
-      // Get detailed pool information
+      // Get detailed info from the most liquid pool for other metrics
       const poolDetailsResponse = await axios.get(
-        `https://api.geckoterminal.com/api/v2/networks/${networkId}/pools/${poolAddress}`,
+        `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${topPool.id.split('_')[1]}`,
         {
           headers: {
             'Accept': 'application/json;version=20230302'
@@ -529,6 +564,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
 
       const poolDetails = poolDetailsResponse.data?.data?.attributes;
       console.log('Pool Details:', poolDetails);
+      console.log('Total Aggregated Liquidity:', totalLiquidity);
 
       // Get current price at the top level
       const currentPrice = Number(poolDetails.base_token_price_usd);
@@ -570,6 +606,16 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
             last24h: `$${Number(poolDetails.volume_usd?.h24 || 0).toLocaleString('en-US')}`
           }
         },
+        liquidity: {
+          total: `$${totalLiquidity.toLocaleString('en-US')}`,
+          marketCap: `$${Number(poolDetails.market_cap_usd).toLocaleString('en-US')}`,
+          fdv: `$${Number(poolDetails.fdv_usd).toLocaleString('en-US')}`,
+          topPools: allPools.slice(0, 5).map((pool: GeckoTerminalPool) => ({
+            name: pool.attributes?.name || 'Unknown Pool',
+            liquidity: `$${Number(pool.attributes?.reserve_in_usd || 0).toLocaleString('en-US')}`,
+            dex: pool.attributes?.dex_id || 'Unknown DEX'
+          }))
+        },
         transactions: {
           last24h: {
             total: (poolDetails.transactions?.h24?.buys || 0) + (poolDetails.transactions?.h24?.sells || 0),
@@ -580,11 +626,6 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
           },
           buyRatio: ((poolDetails.transactions?.h24?.buys || 0) / 
             ((poolDetails.transactions?.h24?.buys || 0) + (poolDetails.transactions?.h24?.sells || 0) || 1) * 100).toFixed(2) + '%'
-        },
-        liquidity: {
-          total: `$${Number(poolDetails.reserve_in_usd).toLocaleString('en-US')}`,
-          marketCap: `$${Number(poolDetails.market_cap_usd).toLocaleString('en-US')}`,
-          fdv: `$${Number(poolDetails.fdv_usd).toLocaleString('en-US')}`
         },
         technical: {
           rsi: rsiData ? {
@@ -612,6 +653,14 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
         }
       };
 
+      // Update the token network reference
+      const tokenData = {
+        name: token.name,
+        symbol: token.symbol,
+        address: formattedAddress,
+        network
+      };
+
       // When fetching from API, use streaming response
       const response = await fetch('/api/technical-analysis', {
         method: 'POST',
@@ -619,12 +668,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          token: {
-            name: token.name,
-            symbol: token.symbol,
-            address: formattedAddress,
-            network: networkId
-          },
+          token: tokenData,
           marketData
         })
       });
@@ -805,7 +849,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
             }}
             className={`px-4 py-3 rounded-t-lg transition-colors duration-200 relative flex items-center ${
               !showAnalysisModal 
-                ? 'bg-gray-800 text-white after:absolute after:bottom-[-2px] after:left-0 after:right-0 after:h-[2px] after:bg-gray-800' 
+                ? 'bg-gray-800 text-white after:absolute after:bottom-[-2px] after:left-0 after:right-0 after:h-[2px] after:bg-gray-800'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -815,7 +859,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
             onClick={handleAITabClick}
             className={`px-4 py-3 rounded-t-lg transition-colors duration-200 relative flex items-center ${
               showAnalysisModal 
-                ? 'bg-gray-800 text-white after:absolute after:bottom-[-2px] after:left-0 after:right-0 after:h-[2px] after:bg-gray-800' 
+                ? 'bg-gray-800 text-white after:absolute after:bottom-[-2px] after:left-0 after:right-0 after:h-[2px] after:bg-gray-800'
                 : `ai-tab-button ${activeChain}-chain`
             }`}
           >
