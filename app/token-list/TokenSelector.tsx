@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Token } from '../../lib/fetchTokenList';
+import TokenImage from '../components/TokenImage';
 
 interface TokenSelectorProps {
   tokens: Token[];
@@ -29,8 +30,8 @@ const TokenSelector: React.FC<TokenSelectorProps> = ({
       <label>{label}</label>
       <div onClick={() => setIsOpen(!isOpen)}>
         {selectedToken ? (
-          <div>
-            <img src={selectedToken.logoURI} alt={selectedToken.symbol} width={24} height={24} />
+          <div className="flex items-center gap-2">
+            <TokenImage src={selectedToken.logoURI} alt={selectedToken.symbol} width={24} height={24} />
             <span>{selectedToken.symbol}</span>
           </div>
         ) : (
@@ -50,8 +51,9 @@ const TokenSelector: React.FC<TokenSelectorProps> = ({
               <li key={token.address} onClick={() => {
                 onSelect(token);
                 setIsOpen(false);
-              }}>
-                <img src={token.logoURI} alt={token.symbol} width={24} height={24} />
+              }}
+              className="flex items-center gap-2">
+                <TokenImage src={token.logoURI} alt={token.symbol} width={24} height={24} />
                 <span>{token.symbol}</span>
                 <span>{token.name}</span>
               </li>

@@ -2,6 +2,7 @@ import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } f
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
+import TokenImage from './TokenImage';
 
 interface Token {
   address: string;
@@ -862,6 +863,18 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative w-full h-full flex flex-col p-6">
+                {/* Token Logo */}
+                {selectedToken?.logoURI && (
+                  <div className="flex justify-center mb-4">
+                    <TokenImage 
+                      src={selectedToken.logoURI} 
+                      alt={selectedToken.symbol} 
+                      width={64}
+                      height={64}
+                      className="rounded-full"
+                    />
+                  </div>
+                )}
                 <div className="flex-1 overflow-auto custom-scrollbar">
                   {analysis.loading ? (
                     <div className="flex items-center justify-center h-64">

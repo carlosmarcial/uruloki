@@ -3,6 +3,12 @@ const path = require('path');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  images: {
+    domains: ['assets.coingecko.com'],
+    deviceSizes: [24, 32, 48, 64, 96],
+    imageSizes: [24, 32, 48, 64, 96],
+    formats: ['image/webp'],
+  },
   env: {
     ZEROX_API_KEY: process.env.ZEROX_API_KEY,
   },

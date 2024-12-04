@@ -2306,8 +2306,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Add this before the return statement
   const renderEthereumSwapInterface = () => (
     <div ref={ethereumSwapContainerRef} className="flex-grow bg-gray-900 rounded-lg p-4 flex flex-col h-full">
-      {/* Top section with wallet connect and chain selector */}
-      <div className="flex gap-2">
+      {/* Top section with wallet connect only */}
+      <div>
         <ConnectButton.Custom>
           {({
             account,
@@ -2315,6 +2315,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             openAccountModal,
             openConnectModal,
             mounted,
+            wallet,
           }) => {
             const ready = mounted;
             const connected = ready && account && chain;
@@ -2323,22 +2324,32 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               <button
                 onClick={connected ? openAccountModal : openConnectModal}
                 className={`
-                  py-3 px-6 rounded-sm font-bold text-base w-[152px]
-                  ${!connected 
+                  py-3 px-6 rounded-sm font-bold text-base min-w-[152px]
+                  ${connected 
                     ? 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
-                    : 'bg-gray-800 text-gray-400'
+                    : 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
                   }
+                  flex items-center justify-center gap-2 whitespace-nowrap
                 `}
               >
-                {connected ? account.displayName : 'Select Wallet'}
+                {connected && wallet?.name === 'MetaMask' && (
+                  <Image 
+                    src="/metamask-icon.png"
+                    alt="MetaMask"
+                    width={16}
+                    height={16}
+                    className="rounded-full"
+                    priority
+                  />
+                )}
+                <span>{connected ? account.displayName : 'Select Wallet'}</span>
               </button>
             );
           }}
         </ConnectButton.Custom>
-        <ChainSelector />
       </div>
 
-      {/* Center the main swap interface */}
+      {/* Rest of the interface remains the same */}
       <div className="flex-1 flex flex-col justify-center">
         {/* Sell section */}
         <div className="mb-4">
