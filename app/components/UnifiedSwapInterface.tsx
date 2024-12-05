@@ -40,9 +40,9 @@ import MainTrading from './ChainToggle';
 import { WalletButton } from './WalletButton';
 import TokenImage from './TokenImage';
 import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll } from 'wagmi/chains';
-import { fetchJupiterQuote, getSwapInstructions, fetchSwapInstructions, getInputMint, getOutputMint } from '@/app/utils/jupiterApi';
+import { fetchJupiterQuote, getInputMint, getOutputMint } from '@/app/utils/jupiterApi';
 import { Connection, sendAndConfirmTransaction, PublicKey, Transaction, VersionedTransaction, TransactionInstruction, Commitment, AddressLookupTableProgram, TransactionMessage, AddressLookupTableAccount, ConnectionConfig, VersionedMessage } from '@solana/web3.js';
-import { getConnection, getLatestBlockhashWithRetry, sendAndConfirmTransactionWithRetry, getWebSocketEndpoint } from '../utils/solanaUtils';
+import { getConnection, sendAndConfirmTransactionWithRetry, getWebSocketEndpoint } from '../utils/solanaUtils';
 import { SOLANA_RPC_ENDPOINTS } from '@app/constants';
 import { Token as SPLToken, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BigNumber from 'bignumber.js';
@@ -59,7 +59,6 @@ import { WalletContextState } from '@solana/wallet-adapter-react';
 import { ComputeBudgetProgram } from '@solana/web3.js';
 import fetch from 'cross-fetch';
 import { solanaWebSocket, subscribeToTransaction } from '../utils/solanaWebSocket';
-import { checkTransactionOnExplorer } from '../utils/solanaUtils'; // Add this import
 import { fetchJupiterSwapInstructions } from '../utils/jupiterApi';
 import { ethers } from 'ethers';
 import EthSlippageSettings from './EthSlippageSettings';
@@ -67,7 +66,6 @@ import { ETH_DEFAULT_SLIPPAGE_PERCENTAGE } from '@app/constants';
 import { PERMIT2_ADDRESS } from '@app/constants';
 import { WETH_ADDRESS } from '@app/constants';
 import { permit2Abi } from '@/src/utils/permit2abi'; // Update this import path
-import { MANUAL_WETH_TOKEN } from '@app/constants';
 import { fetchAvalanchePrice, fetchAvalancheQuote } from '../utils/avalancheUtils';
 import { AVALANCHE_CHAIN_ID, AVALANCHE_TOKENS, JOE_TOKEN_ADDRESS, NATIVE_TOKEN_ADDRESS } from '../constants';
 import { MaxUint256 } from 'ethers';
@@ -76,10 +74,9 @@ import { fetchPolygonTokens } from '../utils/polygonUtils';
 import { fetchOptimismTokens } from '../utils/optimismUtils';
 import { ARBITRUM_CHAIN_ID, POLYGON_CHAIN_ID, OPTIMISM_CHAIN_ID, ETHEREUM_CHAIN_ID } from '@app/constants';
 import { fetchAvalancheTokens } from '../utils/avalancheUtils';
-import { fetchSolanaTokens } from '../utils/solanaUtils'; // Make sure this import exists
 import EthereumConfirmationModal from './EthereumConfirmationModal';
 import { calculatePriceImpact, formatGasEstimate } from '../utils/ethereumUtils';
-import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
+import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceUtils';
 import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
@@ -361,8 +358,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     abi: ERC20_ABI,
     functionName: 'allowance',
     args: [address as `0x${string}`, exchangeProxyAddress],
-    enabled: !!sellToken && !!address,
-    watch: true,
+    enabled: !!sellToken && !!address
   });
 
   useEffect(() => {
