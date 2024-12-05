@@ -962,7 +962,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           const fetchedTokens = await fetchTokenList(chainId);
           tokens = fetchedTokens.map(token => ({
             ...token,
-            address: token.address as `0x${string}` // Ensure address type matches
+            address: token.address.toLowerCase().startsWith('0x') 
+              ? (token.address as `0x${string}`) 
+              : (`0x${token.address}` as `0x${string}`),
+            chainId,
+            logoURI: token.logoURI || '',
+            _timestamp: Date.now()
           }));
       }
 
@@ -974,11 +979,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           );
 
         console.log(`Setting ${validTokens.length} valid tokens for chain ${chainId}`);
-        setAvailableTokens(validTokens);
+        setTokens(validTokens);
       }
     } catch (error) {
       console.error(`Error fetching tokens for chain ${chainId}:`, error);
-      setAvailableTokens([]);
+      setTokens([]);
     }
   }, [chainId]);
 
@@ -2157,7 +2162,19 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     const loadTokens = async () => {
       const chainId = 1; // Assuming Ethereum mainnet, adjust as needed
       const fetchedTokens = await fetchTokenList(chainId);
-      setTokens(fetchedTokens);
+      
+      // Transform the tokens to ensure proper typing
+      const transformedTokens: TokenData[] = fetchedTokens.map(token => ({
+        ...token,
+        address: token.address.toLowerCase().startsWith('0x') 
+          ? (token.address as `0x${string}`) 
+          : (`0x${token.address}` as `0x${string}`),
+        chainId,
+        logoURI: token.logoURI || '',
+        _timestamp: Date.now()
+      }));
+
+      setTokens(transformedTokens);
     };
     loadTokens();
   }, []);
