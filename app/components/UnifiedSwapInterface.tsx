@@ -942,7 +942,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <span className="text-white text-sm">{token.symbol}</span>
         </>
       ) : (
-        <span className={`text-sm ${
+        <span className={`text-sm font-bold ${
           activeChain === 'ethereum' 
             ? 'text-[#77be44]' 
             : 'text-[#9333ea]'
