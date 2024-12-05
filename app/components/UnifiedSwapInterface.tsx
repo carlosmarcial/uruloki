@@ -476,13 +476,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   }, [sellToken, sellAmount, allowance, exchangeProxyAddress]);
 
   const handleApprove = async () => {
-    if (!walletClient || !allowanceTarget || !sellToken || !address || !publicClient) {
+    if (!walletClient || !sellToken || !address || !publicClient) {
       console.error('Missing required parameters for approval');
       return;
     }
 
     try {
-      console.log('Approving token:', sellToken.address, 'for spender:', allowanceTarget);
+      console.log('Approving token:', sellToken.address, 'for spender:', PERMIT2_ADDRESS);
       
       const tokenContract = {
         address: sellToken.address as `0x${string}`,
@@ -490,11 +490,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       };
 
       // First check current allowance with type assertion
-      const currentAllowance = (await publicClient.readContract({
+      const currentAllowance = await publicClient.readContract({
         ...tokenContract,
         functionName: 'allowance',
-        args: [address, allowanceTarget as `0x${string}`],
-      })) as bigint;
+        args: [
+          address as `0x${string}`, 
+          PERMIT2_ADDRESS as `0x${string}`
+        ]
+      }) as bigint;
 
       if (currentAllowance > 0n) {
         console.log('Token already has allowance:', currentAllowance.toString());
@@ -503,17 +506,23 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       }
 
       // Send approval transaction
-      const hash = await walletClient.writeContract({
+      const { request } = await publicClient.simulateContract({
         ...tokenContract,
         functionName: 'approve',
-        args: [allowanceTarget as `0x${string}`, MAX_ALLOWANCE],
+        args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
+        account: address
       });
 
-      console.log('Approval transaction submitted:', hash);
+      await writeContract(request);
 
-      // Wait for transaction confirmation
+      // Wait for the transaction hash from the hook data
+      if (!approveData) {
+        throw new Error('No transaction hash received');
+      }
+
+      // Wait for confirmation
       const receipt = await publicClient.waitForTransactionReceipt({
-        hash: hash as `0x${string}`,
+        hash: approveData,
         confirmations: 1
       });
 
@@ -1800,7 +1809,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Update the handleEthereumSwap function
   const handleEthereumSwap = async (): Promise<void> => {
     if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
-      console.error('Missing required parameters');
+      console.error('Missing required parameters:', {
+        sellToken: !!sellToken,
+        buyToken: !!buyToken,
+        sellAmount: !!sellAmount,
+        address: !!address,
+        publicClient: !!publicClient
+      });
       setEthTransactionStatus('error');
       return;
     }
