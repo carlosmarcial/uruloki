@@ -1603,22 +1603,31 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  // Add this helper function to create transaction metadata
-  const createTransactionMeta = (
-    sellToken: TokenData,
-    buyToken: TokenData,
+  // Add this type and function near the top of the file, after the interfaces
+  interface SwapMeta {
+    title: string;
+    description: string;
+    tokens: Array<{
+      address: string;
+      symbol: string;
+      decimals: number;
+      amount: string;
+    }>;
+  }
+
+  const createSwapMeta = (
+    sellToken: TokenData | SolanaToken | null,
+    buyToken: TokenData | SolanaToken | null,
     sellAmount: string,
-    quote: QuoteResponse
-  ) => {
-    if (!quote.buyAmount) {
-      throw new Error('Quote missing buyAmount');
+    buyAmount: string
+  ): SwapMeta | null => {
+    if (!sellToken || !buyToken) {
+      return null;
     }
 
     return {
       title: 'Swap via 0x',
-      description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
-        formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
-      } ${buyToken.symbol}`,
+      description: `Swap ${sellAmount} ${sellToken.symbol} for ~${buyAmount} ${buyToken.symbol}`,
       tokens: [
         {
           address: sellToken.address,
@@ -1630,15 +1639,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           address: buyToken.address,
           symbol: buyToken.symbol,
           decimals: buyToken.decimals,
-          amount: quote.buyAmount
+          amount: buyAmount
         }
       ]
     };
   };
 
-  // Update the relevant part of handleEthereumSwap
+  // Update the handleEthereumSwap function to use the new createSwapMeta function
   const handleEthereumSwap = async (): Promise<void> => {
-    // Early return if tokens are not selected
     if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
       console.error('Missing required parameters');
       setEthTransactionStatus('error');
@@ -1748,27 +1756,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         throw new Error('Tokens became invalid during transaction preparation');
       }
 
-      // Create meta object with guaranteed non-null tokens
-      const meta = {
-        title: 'Swap via 0x',
-        description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
-          formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
-        } ${buyToken.symbol}`,
-        tokens: [
-          {
-            address: sellToken.address,
-            symbol: sellToken.symbol,
-            decimals: sellToken.decimals,
-            amount: sellAmount
-          },
-          {
-            address: buyToken.address,
-            symbol: buyToken.symbol,
-            decimals: buyToken.decimals,
-            amount: quote.buyAmount
-          }
-        ]
-      };
+      // Create meta object with type safety
+      const buyAmountFormatted = formatUnits(BigInt(quote.buyAmount), buyToken.decimals);
+      const meta = createSwapMeta(sellToken, buyToken, sellAmount, buyAmountFormatted);
+      
+      if (!meta) {
+        throw new Error('Failed to create transaction metadata');
+      }
 
       // Prepare transaction parameters with proper type assertions
       const txParams = {
