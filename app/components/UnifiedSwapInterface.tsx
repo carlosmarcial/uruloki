@@ -184,7 +184,7 @@ interface QuoteResponse {
         name: string;
         version: string;
         chainId: number;
-        verifyingContract: string;
+        verifyingContract: `0x${string}`; // Update this type
       };
       message: Record<string, any>;
     };
@@ -1710,7 +1710,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           ...quote.permit2.eip712,
           types: quote.permit2.eip712.types,
           primaryType: quote.permit2.eip712.primaryType,
-          domain: quote.permit2.eip712.domain,
+          domain: {
+            ...quote.permit2.eip712.domain,
+            verifyingContract: quote.permit2.eip712.domain.verifyingContract as `0x${string}` // Cast to correct type
+          },
           message: quote.permit2.eip712.message
         };
         
@@ -1728,7 +1731,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             size: 32,
           });
           txData = concat([
-            txData, 
+            txData as `0x${string}`, // Cast txData to correct type
             signatureLengthInHex, 
             signature
           ]) as `0x${string}`;
