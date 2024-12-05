@@ -585,8 +585,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     sellAmount: bigint,
     address: `0x${string}`,
     walletClient: WalletClient,
-    publicClient: PublicClient
+    client: any
   ) => {
+    if (!isPublicClientAvailable(client)) {
+      throw new Error('Public client not available');
+    }
+
     try {
       console.log('Checking allowance...', {
         sellToken,
@@ -602,11 +606,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       }
 
       // Check current allowance using readContract
-      const currentAllowance = await publicClient.readContract({
+      const currentAllowance = await client.readContract({
         address: sellToken.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'allowance',
-        args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`]
+        args: [address, PERMIT2_ADDRESS as `0x${string}`]
       }) as bigint;
 
       console.log('Current allowance:', currentAllowance.toString());
@@ -618,7 +622,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
         try {
           // Simulate the approval transaction
-          const { request } = await publicClient.simulateContract({
+          const { request } = await client.simulateContract({
             address: sellToken.address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'approve',
@@ -633,7 +637,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           console.log('Approval transaction hash:', hash);
 
           // Wait for transaction confirmation
-          const receipt = await publicClient.waitForTransactionReceipt({ 
+          const receipt = await client.waitForTransactionReceipt({ 
             hash,
             timeout: 60_000,
             confirmations: 1
@@ -2724,6 +2728,11 @@ const estimateGasForTransaction = async (txParams: any) => {
     console.error('Error estimating gas:', error);
     throw error;
   }
+};
+
+// Add this type guard function
+const isPublicClientAvailable = (client: any): client is PublicClient => {
+  return client !== null && client !== undefined && typeof client.readContract === 'function';
 };
 
 
