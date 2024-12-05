@@ -1354,13 +1354,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       swapRequest: {
         quoteResponse: {
           ...quoteResponse,
-          slippageBps: Math.round(solanaSlippagePercentage * 100)
+          slippageBps
         },
         userPublicKey: solanaWallet.publicKey.toString(),
         wrapUnwrapSOL: true,
-        slippageBps,
-        dynamicComputeUnitLimit: true,
-        useSharedAccounts: true,
+        computeUnitPriceMicroLamports: null,
         asLegacyTransaction: false
       }
     });
