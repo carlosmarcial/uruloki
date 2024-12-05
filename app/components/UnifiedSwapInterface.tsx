@@ -807,7 +807,26 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   useEffect(() => {
     return () => {
       if (pendingTxSignature) {
-        solanaWebSocket.unsubscribeFromTransaction(pendingTxSignature);
+        // The subscribeToTransaction method returns a cleanup function
+        const subscription = solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
+          onStatusChange: (status) => {
+            console.log('Transaction status:', status);
+            setTxStatus(status);
+          },
+          onFinality: (success) => {
+            console.log('Transaction finality:', success);
+            if (success) {
+              setTxStatus('success');
+            } else {
+              setTxStatus('error');
+            }
+          }
+        });
+        
+        // Return the cleanup function
+        return () => {
+          subscription.unsubscribe();
+        };
       }
     };
   }, [pendingTxSignature]);
