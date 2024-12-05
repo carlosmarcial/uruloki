@@ -153,7 +153,7 @@ interface TokenData {
   name: string;
   decimals: number;
   logoURI?: string;
-  address: string;
+  address: `0x${string}`; // Make address type more specific for Ethereum tokens
   symbol: string;
   _timestamp?: number;
 }
@@ -224,23 +224,20 @@ const getCachedPrice = (tokenAddress: string): number | null => {
 
 // Move this hook outside the component
 const useSolanaTokenBalance = (
-  token: any, 
+  token: TokenData | null,
   publicKey: PublicKey | null,
   connection: Connection | null
-) => {
+): number | null => {
   const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
-    const fetchBalance = async () => {
-      if (!token || !publicKey || !connection) return;
+    if (!token || !publicKey || !connection) return;
 
+    const fetchBalance = async () => {
       try {
-        // Use the imported SOL_MINT_ADDRESSES
         if (SOL_MINT_ADDRESSES.includes(token.address)) {
           const solBalance = await connection.getBalance(publicKey);
-          const formattedBalance = solBalance / LAMPORTS_PER_SOL;
-          // Format balance based on value
-          setBalance(formattedBalance);
+          setBalance(solBalance / LAMPORTS_PER_SOL);
         } else {
           const tokenMint = new PublicKey(token.address);
           const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
@@ -248,9 +245,7 @@ const useSolanaTokenBalance = (
           });
 
           if (tokenAccounts.value[0]) {
-            const rawBalance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
-            // Format balance based on value
-            setBalance(rawBalance);
+            setBalance(tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount);
           } else {
             setBalance(0);
           }
@@ -557,44 +552,32 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   // Update the fetchQuote function
-  const fetchQuote = useCallback(async () => {
-    try {
-      if (!sellToken || !buyToken || !sellAmount || !address) {
-        throw new Error('Missing required parameters for quote');
-      }
-
-      const sellAmountInBaseUnits = parseUnits(
-        sellAmount, 
-        sellToken.decimals
-      ).toString();
-
-      const sellTokenAddress = sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? 
-        'ETH' : sellToken.address;
-      const buyTokenAddress = buyToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? 
-        'ETH' : buyToken.address;
-
-      console.log('Using slippage value for quote:', ethSlippage, '%');
-
-      const params = {
-        chainId,
-        sellToken: sellTokenAddress,
-        buyToken: buyTokenAddress,
-        sellAmount: sellAmountInBaseUnits,
-        takerAddress: address,
-        slippagePercentage: ethSlippage.toString() // Pass the raw percentage
-      };
-
-      console.log('Full quote request params:', params);
-
-      const response = await axios.get('/api/swap-price', {
-        params,
-      });
-
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching quote:', error);
-      throw error;
+  const fetchQuote = useCallback(async (): Promise<QuoteResponse> => {
+    if (!sellToken || !buyToken || !sellAmount || !address) {
+      throw new Error('Missing required parameters for quote');
     }
+
+    const sellAmountInBaseUnits = parseUnits(
+      sellAmount, 
+      sellToken.decimals
+    ).toString();
+
+    const sellTokenAddress = sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? 
+      'ETH' : sellToken.address;
+    const buyTokenAddress = buyToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? 
+      'ETH' : buyToken.address;
+
+    const params = {
+      chainId,
+      sellToken: sellTokenAddress,
+      buyToken: buyTokenAddress,
+      sellAmount: sellAmountInBaseUnits,
+      takerAddress: address,
+      slippagePercentage: ethSlippage.toString()
+    };
+
+    const response = await axios.get<QuoteResponse>('/api/swap-price', { params });
+    return response.data;
   }, [sellToken, buyToken, sellAmount, address, ethSlippage, chainId]);
 
   // Add this function to check and set allowance
@@ -1584,7 +1567,40 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  // Update handleEthereumSwap to use both endpoints
+  // Add this helper function to create transaction metadata
+  const createTransactionMeta = (
+    sellToken: TokenData,
+    buyToken: TokenData,
+    sellAmount: string,
+    quote: QuoteResponse
+  ) => {
+    if (!quote.buyAmount) {
+      throw new Error('Quote missing buyAmount');
+    }
+
+    return {
+      title: 'Swap via 0x',
+      description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
+        formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
+      } ${buyToken.symbol}`,
+      tokens: [
+        {
+          address: sellToken.address,
+          symbol: sellToken.symbol,
+          decimals: sellToken.decimals,
+          amount: sellAmount
+        },
+        {
+          address: buyToken.address,
+          symbol: buyToken.symbol,
+          decimals: buyToken.decimals,
+          amount: quote.buyAmount
+        }
+      ]
+    };
+  };
+
+  // Update the relevant part of handleEthereumSwap
   const handleEthereumSwap = async (): Promise<void> => {
     if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
       throw new Error('Missing required parameters');
@@ -1643,7 +1659,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
       console.log('Requesting quote with params:', params);
 
-      const quoteResponse = await axios.get('/api/quote', { params });
+      const quoteResponse = await axios.get<QuoteResponse>('/api/quote', { params });
       const quote = quoteResponse.data;
       
       console.log('Quote received:', quote);
@@ -1685,26 +1701,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
         gasPrice: quote.transaction.gasPrice ? BigInt(quote.transaction.gasPrice) : undefined,
-        meta: {
-          title: 'Swap via 0x',
-          description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
-            formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
-          } ${buyToken.symbol}`,
-          tokens: [
-            {
-              address: sellToken.address,
-              symbol: sellToken.symbol,
-              decimals: sellToken.decimals,
-              amount: sellAmount
-            },
-            {
-              address: buyToken.address,
-              symbol: buyToken.symbol,
-              decimals: buyToken.decimals,
-              amount: quote.buyAmount
-            }
-          ]
-        }
+        meta: createTransactionMeta(sellToken, buyToken, sellAmount, quote)
       };
 
       console.log('Sending transaction with params:', {
