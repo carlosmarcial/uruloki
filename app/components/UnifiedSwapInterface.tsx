@@ -2346,7 +2346,9 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const { data: sellTokenBalance } = useBalance({
     address,
     token: sellToken?.address as `0x${string}`,
-    enabled: !!sellToken && !!address && activeChain === 'ethereum',
+    query: {
+      enabled: !!sellToken && !!address && activeChain === 'ethereum'
+    }
   });
 
   // Add state for USD values
@@ -2461,7 +2463,9 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Add a new hook for native ETH balance
   const { data: ethBalance } = useBalance({
     address,
-    enabled: !!address && activeChain === 'ethereum',
+    query: {
+      enabled: !!address && activeChain === 'ethereum'
+    }
   });
 
   // Add this helper function at the top level
