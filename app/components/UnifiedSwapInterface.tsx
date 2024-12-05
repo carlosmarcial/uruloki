@@ -1347,20 +1347,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     const slippageBps = Math.round(solanaSlippagePercentage * 100);
     console.log('Using slippage (bps):', slippageBps);
 
-    const swapRequest: SwapRequestBody = {
-      quoteResponse,
-      userPublicKey: solanaWallet.publicKey.toString(),
-      wrapUnwrapSOL: true,
-      slippageBps,
-      dynamicComputeUnitLimit: true,
-      useSharedAccounts: true,
-      asLegacyTransaction: false,
-      prioritizationFeeLamports: "auto",
-      computeUnitPriceMicroLamports: null
-    };
-
     const swapResponse = await fetchJupiterSwapInstructions({
-      swapRequest
+      swapRequest: {
+        quoteResponse,
+        userPublicKey: solanaWallet.publicKey.toString(),
+        wrapUnwrapSOL: true,
+        slippageBps,
+        dynamicComputeUnitLimit: true,
+        useSharedAccounts: true,
+        asLegacyTransaction: false
+      }
     });
 
     if (!swapResponse || !swapResponse.swapTransaction) {
@@ -2894,35 +2890,6 @@ const estimateGasForTransaction = async (txParams: any) => {
 // Add this type guard function
 const isPublicClientAvailable = (client: any): client is PublicClient => {
   return client !== null && client !== undefined && typeof client.readContract === 'function';
-};
-
-// Add this interface near the top of the file with other interfaces
-interface SwapRequestBody {
-  quoteResponse: any;
-  userPublicKey: string;
-  wrapUnwrapSOL: boolean;
-  slippageBps: number;
-  dynamicComputeUnitLimit: boolean;
-  useSharedAccounts: boolean;
-  asLegacyTransaction: boolean;
-  prioritizationFeeLamports?: string;
-  computeUnitPriceMicroLamports?: number | null;
-}
-
-// Update the function to use the interface
-const fetchJupiterSwapInstructions = async ({
-  swapRequest
-}: {
-  swapRequest: SwapRequestBody;
-}) => {
-  const response = await fetch('https://quote-api.jup.ag/v6/swap', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(swapRequest)
-  });
-  return await response.json();
 };
 
 
