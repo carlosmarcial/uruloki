@@ -17,7 +17,7 @@ import {
   useSignTypedData, 
   useSendTransaction, 
   usePublicClient, 
-  useWalletClient
+  useWalletClient,
 } from 'wagmi';
 import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -415,20 +415,26 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     return currentAllowance < requiredAllowance;
   }, [sellToken, sellAmount, tokenAllowances]);
 
-  const { writeContract: approveToken, data: approveData } = useWriteContract();
+  // Update the hooks at the top of the component
+  const { writeContract, data: approveData } = useWriteContract();
 
   // Update the transaction receipt hooks
   const { isLoading: isApproving, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
-    hash: approveData as `0x${string}` // Type assertion for hash
+    hash: approveData as `0x${string}`, // Now approveData will be defined
+    enabled: !!approveData, // Only enable the hook when we have a hash
   });
 
-  const { writeContract, data: swapData } = useWriteContract();
-  
+  // Remove the duplicate writeContract declaration
+  // const { data: swapData } = useWriteContract();
+  // Instead, use a separate hook for swap transactions
+  const { writeContract: writeSwapContract, data: swapData } = useWriteContract();
+
   // Move this up before using isSwapSuccess
   const { isSuccess: isSwapSuccess } = useWaitForTransactionReceipt({
-    hash: swapData as `0x${string}` // Type assertion for hash
+    hash: swapData as `0x${string}`, // Type assertion for hash
+    enabled: !!swapData, // Only enable the hook when we have a hash
   });
-  
+
   // Now we can use isSwapSuccess since it's declared
   const isSwapPending = Boolean(swapData && !isSwapSuccess);
 
@@ -680,13 +686,18 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
           console.log('Approval simulation successful, sending transaction...');
 
+          if (!publicClient) {
+            throw new Error('Public client not available');
+          }
+
           // Send the approval transaction
           const hash = await walletClient.writeContract(request);
-          console.log('Approval transaction hash:', hash);
+          const txHash = hash as `0x${string}`;
+          console.log('Approval transaction submitted:', txHash);
 
           // Wait for transaction confirmation
-          const receipt = await client.waitForTransactionReceipt({ 
-            hash: hash as `0x${string}`,
+          const receipt = await publicClient.waitForTransactionReceipt({
+            hash: txHash,
             confirmations: 1
           });
 
@@ -885,7 +896,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         abi: erc20Abi,
         functionName: 'approve',
         args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
-        account: address
+        account: address,
       });
 
       const hash = await walletClient.writeContract(request);
@@ -1626,7 +1637,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       if (!allowance || sellAmountBigInt > (allowance as bigint)) {
         console.log('Approval needed, preparing transaction...');
         
-        // Prepare approval transaction for Permit2
         const { request } = await publicClient.simulateContract({
           address: sellToken.address as `0x${string}`,
           abi: ERC20_ABI,
@@ -1635,13 +1645,17 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           account: address,
         });
 
-        // Send approval transaction
-        const hash = await writeContract(request) as `0x${string}`;
-        console.log('Approval transaction submitted:', hash);
+        // Send the transaction
+        await writeContract(request);
+
+        // Wait for the transaction hash from the hook data
+        if (!approveData) {
+          throw new Error('No transaction hash received');
+        }
 
         // Wait for confirmation
         const receipt = await publicClient.waitForTransactionReceipt({
-          hash,
+          hash: approveData,
           confirmations: 1
         });
 
@@ -1744,7 +1758,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
       // First check if we need to approve tokens for Permit2
       if (sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
-        const currentAllowance = await publicClient.readContract({
+        const currentAllowance = (await publicClient.readContract({
           address: sellToken.address as `0x${string}`,
           abi: ERC20_ABI,
           functionName: 'allowance',
@@ -1752,7 +1766,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             address as `0x${string}`, 
             PERMIT2_ADDRESS as `0x${string}`
           ]
-        });
+        })) as bigint;  // Add type assertion here
 
         const sellAmountBigInt = BigInt(sellAmountInBaseUnits);
         
@@ -1766,8 +1780,24 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             account: address,
           });
 
-          const hash = await writeContract(request);
-          await waitForTransaction(config, { hash });
+          // Send the transaction
+          await writeContract(request);
+
+          // Wait for the transaction hash from the hook data
+          if (!approveData) {
+            throw new Error('No transaction hash received');
+          }
+
+          // Wait for confirmation
+          const receipt = await publicClient.waitForTransactionReceipt({
+            hash: approveData,
+            confirmations: 1
+          });
+
+          if (receipt.status === 'reverted') {
+            throw new Error('Transaction reverted');
+          }
+
           console.log('Permit2 approved');
         }
       }
@@ -2914,7 +2944,6 @@ const estimateGasForTransaction = async (txParams: any) => {
 const isPublicClientAvailable = (client: any): client is PublicClient => {
   return client !== null && client !== undefined && typeof client.readContract === 'function';
 };
-
 
 
 
