@@ -5,7 +5,7 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import Button from "./button";
 import { DEFAULT_SLIPPAGE_BPS } from '../constants';
-import { fetchJupiterQuote, getSwapInstructions, deserializeInstruction, getAddressLookupTableAccounts } from '../utils/jupiterApi';
+import { fetchJupiterQuote, fetchJupiterSwapInstructions as getSwapInstructions, deserializeInstruction, getAddressLookupTableAccounts } from '../utils/jupiterApi';
 
 const assets = [
   { name: 'SOL', mint: 'So11111111111111111111111111111111111111112', decimals: 9},
