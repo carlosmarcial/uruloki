@@ -805,28 +805,37 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Add useEffect to cleanup WebSocket subscription
   useEffect(() => {
-    return () => {
-      if (pendingTxSignature) {
-        // The subscribeToTransaction method returns a cleanup function
-        const subscription = solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
-          onStatusChange: (status) => {
-            console.log('Transaction status:', status);
-            setTxStatus(status);
-          },
-          onFinality: (success) => {
-            console.log('Transaction finality:', success);
-            if (success) {
-              setTxStatus('success');
-            } else {
-              setTxStatus('error');
-            }
+    let cleanup: (() => void) | undefined;
+    
+    if (pendingTxSignature) {
+      const subscription = solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
+        onStatusChange: (status) => {
+          console.log('Transaction status:', status);
+          setTxStatus(status);
+        },
+        onFinality: (success) => {
+          console.log('Transaction finality:', success);
+          if (success) {
+            setTxStatus('success');
+          } else {
+            setTxStatus('error');
           }
-        });
-        
-        // Return the cleanup function
-        return () => {
-          subscription.unsubscribe();
-        };
+        }
+      });
+      
+      cleanup = () => {
+        try {
+          subscription.then(sub => sub.unsubscribe());
+        } catch (error) {
+          console.error('Error cleaning up subscription:', error);
+        }
+      };
+    }
+
+    // Return cleanup function
+    return () => {
+      if (cleanup) {
+        cleanup();
       }
     };
   }, [pendingTxSignature]);
