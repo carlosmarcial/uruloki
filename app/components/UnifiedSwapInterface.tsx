@@ -1601,43 +1601,60 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  // Add this helper function to create transaction metadata
+  // Update the createTransactionMeta function with proper null checks
   const createTransactionMeta = (
     sellToken: TokenData,
     buyToken: TokenData,
     sellAmount: string,
     quote: QuoteResponse
   ) => {
+    // Add type guards and null checks
+    if (!sellToken || !buyToken) {
+      throw new Error('Missing token information');
+    }
+
     if (!quote.buyAmount) {
       throw new Error('Quote missing buyAmount');
     }
 
-    return {
-      title: 'Swap via 0x',
-      description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
-        formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
-      } ${buyToken.symbol}`,
-      tokens: [
-        {
-          address: sellToken.address,
-          symbol: sellToken.symbol,
-          decimals: sellToken.decimals,
-          amount: sellAmount
-        },
-        {
-          address: buyToken.address,
-          symbol: buyToken.symbol,
-          decimals: buyToken.decimals,
-          amount: quote.buyAmount
-        }
-      ]
-    };
+    try {
+      const buyAmountFormatted = formatUnits(
+        BigInt(quote.buyAmount), 
+        buyToken.decimals
+      );
+
+      return {
+        title: 'Swap via 0x',
+        description: `Swap ${sellAmount} ${sellToken.symbol} for ~${buyAmountFormatted} ${buyToken.symbol}`,
+        tokens: [
+          {
+            address: sellToken.address,
+            symbol: sellToken.symbol,
+            decimals: sellToken.decimals,
+            amount: sellAmount
+          },
+          {
+            address: buyToken.address,
+            symbol: buyToken.symbol,
+            decimals: buyToken.decimals,
+            amount: quote.buyAmount
+          }
+        ]
+      };
+    } catch (error) {
+      throw new Error(`Failed to create transaction metadata: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
-  // Update the relevant part of handleEthereumSwap
+  // Update the handleEthereumSwap function where it calls createTransactionMeta
   const handleEthereumSwap = async (): Promise<void> => {
     if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
       throw new Error('Missing required parameters');
+    }
+
+    // Ensure sellToken and buyToken are of type TokenData
+    if (!('decimals' in sellToken) || !('decimals' in buyToken)) {
+      throw new Error('Invalid token format');
     }
 
     try {
@@ -1746,7 +1763,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
         gasPrice: quote.transaction.gasPrice ? BigInt(quote.transaction.gasPrice) : undefined,
-        meta: createTransactionMeta(sellToken, buyToken, sellAmount, quote)
+        meta: createTransactionMeta(
+          sellToken as TokenData,
+          buyToken as TokenData,
+          sellAmount,
+          quote
+        )
       };
 
       console.log('Sending transaction with params:', {
