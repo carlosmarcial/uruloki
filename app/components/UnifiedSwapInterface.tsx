@@ -176,18 +176,17 @@ interface QuoteResponse {
   };
   permit2?: {
     eip712: {
+      types: {
+        [key: string]: Array<{ name: string; type: string }>;
+      };
+      primaryType: string; // Add this required field
       domain: {
         name: string;
         version: string;
         chainId: number;
         verifyingContract: string;
       };
-      types: {
-        [key: string]: Array<{ name: string; type: string }>;
-      };
-      message: {
-        [key: string]: any;
-      };
+      message: Record<string, any>;
     };
   };
   allowanceTarget?: string;
@@ -1707,7 +1706,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       let txData = quote.transaction.data;
       if (quote.permit2?.eip712) {
         console.log('Signing Permit2 message...');
-        const signature = await signTypedDataAsync(quote.permit2.eip712);
+        const typedData = {
+          ...quote.permit2.eip712,
+          types: quote.permit2.eip712.types,
+          primaryType: quote.permit2.eip712.primaryType,
+          domain: quote.permit2.eip712.domain,
+          message: quote.permit2.eip712.message
+        };
+        
+        const signature = await signTypedDataAsync(typedData);
         
         const MAGIC_CALLDATA_STRING = "f".repeat(130);
         if (txData.includes(MAGIC_CALLDATA_STRING)) {
