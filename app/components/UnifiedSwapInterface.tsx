@@ -1229,10 +1229,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       // Get swap instructions
       const swapResult = await fetchJupiterSwapInstructions({
         swapRequest: {
-          quoteResponse,
-          userPublicKey: solanaWallet.publicKey?.toString() || '',
+          quoteResponse: {
+            ...quoteResponse,
+            slippageBps: Math.round(solanaSlippagePercentage * 100)
+          },
+          userPublicKey: solanaWallet.publicKey.toString(),
           wrapUnwrapSOL: true,
-          computeUnitPriceMicroLamports: null,
+          dynamicComputeUnitLimit: true,
+          useSharedAccounts: true,
           asLegacyTransaction: false
         }
       });
