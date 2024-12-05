@@ -388,10 +388,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   });
 
   const { writeContract, data: swapData } = useWriteContract();
-  const isSwapPending = Boolean(swapData && !isSwapSuccess);
+  
+  // Move this up before using isSwapSuccess
   const { isSuccess: isSwapSuccess } = useWaitForTransactionReceipt({
     hash: swapData as `0x${string}` // Type assertion for hash
   });
+  
+  // Now we can use isSwapSuccess since it's declared
+  const isSwapPending = Boolean(swapData && !isSwapSuccess);
 
   const { estimateGas } = useEstimateGas();
 
