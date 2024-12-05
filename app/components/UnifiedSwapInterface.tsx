@@ -365,7 +365,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const publicClient = usePublicClient();
   const { signTypedDataAsync } = useSignTypedData();
   const { sendTransactionAsync } = useSendTransaction();
-  const waitForTransaction = useWaitForTransactionReceipt();
   const { data: walletClient } = useWalletClient();
 
   // Solana wallet
@@ -1904,9 +1903,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       console.log('Transaction submitted:', hash);
       setEthTransactionHash(hash);
 
-      const receipt = await waitForTransaction(config, {
+      // Update this section to use publicClient
+      const receipt = await publicClient.waitForTransactionReceipt({
         hash,
-        confirmations: 1,
+        confirmations: 1
       });
       
       if (receipt.status === 'success') {
