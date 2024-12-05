@@ -805,17 +805,20 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Add useEffect to cleanup WebSocket subscription
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
+    let isSubscribed = true;
+    let cleanupFn: (() => void) | undefined;
     
     if (pendingTxSignature) {
-      try {
-        // Create the subscription and store its cleanup function
-        const { unsubscribe: cleanupFn } = solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
-          onStatusChange: (status) => {
+      // Create the subscription
+      solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
+        onStatusChange: (status) => {
+          if (isSubscribed) {
             console.log('Transaction status:', status);
             setTxStatus(status);
-          },
-          onFinality: (success) => {
+          }
+        },
+        onFinality: (success) => {
+          if (isSubscribed) {
             console.log('Transaction finality:', success);
             if (success) {
               setTxStatus('success');
@@ -823,19 +826,27 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               setTxStatus('error');
             }
           }
-        });
-        
-        // Store the cleanup function
-        unsubscribe = cleanupFn;
-      } catch (error) {
+        }
+      }).then(subscription => {
+        if (isSubscribed) {
+          cleanupFn = () => {
+            // Cleanup subscription
+            solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
+              onStatusChange: () => {},
+              onFinality: () => {}
+            });
+          };
+        }
+      }).catch(error => {
         console.error('Error subscribing to transaction:', error);
-      }
+      });
     }
 
     // Return cleanup function
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
+      isSubscribed = false;
+      if (cleanupFn) {
+        cleanupFn();
       }
     };
   }, [pendingTxSignature]);
