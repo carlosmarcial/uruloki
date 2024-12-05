@@ -108,7 +108,7 @@ const JupiterTerminal = () => {
       const quote = await fetchJupiterQuote({
         inputMint: fromAsset.mint,
         outputMint: toAsset.mint,
-        amount: inputAmount,
+        amount: inputAmount.toString(),
       });
 
       console.log('Quote received:', quote);
