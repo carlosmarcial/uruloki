@@ -80,7 +80,7 @@ import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceUtils';
 import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
-import { PublicClient, WalletClient } from 'wagmi';
+import type { PublicClient, WalletClient } from 'viem';
 
 // Update these color utility classes
 const darkThemeClasses = {
@@ -487,11 +487,18 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [quote, setQuote] = useState<any>(null);
   
   // Add this function to check and handle approvals
-  const checkAndApproveToken = async (tokenAddress: string, spenderAddress: string, amount: bigint) => {
+  const checkAndApproveToken = async (
+    tokenAddress: `0x${string}`,
+    spenderAddress: `0x${string}`,
+    amount: bigint
+  ) => {
     try {
-      // Add null check for publicClient
       if (!publicClient) {
         throw new Error('Public client not available');
+      }
+
+      if (!address) {
+        throw new Error('No address available');
       }
 
       console.log('Checking approval for:', {
@@ -501,7 +508,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       });
 
       const tokenContract = {
-        address: tokenAddress as `0x${string}`,
+        address: tokenAddress,
         abi: erc20Abi,
       };
 
@@ -509,7 +516,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       const currentAllowance = await publicClient.readContract({
         ...tokenContract,
         functionName: 'allowance',
-        args: [address, spenderAddress],
+        args: [address as `0x${string}`, spenderAddress],
       });
 
       console.log('Current allowance:', currentAllowance.toString());
@@ -1579,7 +1586,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Update handleEthereumSwap to use both endpoints
   const handleEthereumSwap = async (): Promise<void> => {
-    if (!sellToken || !buyToken || !sellAmount || !address) {
+    if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
       throw new Error('Missing required parameters');
     }
 
@@ -1600,7 +1607,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           address: sellToken.address as `0x${string}`,
           abi: ERC20_ABI,
           functionName: 'allowance',
-          args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`],
+          args: [
+            address as `0x${string}`, 
+            PERMIT2_ADDRESS as `0x${string}`
+          ]
         });
 
         const sellAmountBigInt = BigInt(sellAmountInBaseUnits);
@@ -1611,7 +1621,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             address: sellToken.address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'approve',
-            args: [PERMIT2_ADDRESS, MaxUint256],
+            args: [PERMIT2_ADDRESS as `0x${string}`, MaxUint256],
             account: address,
           });
 
@@ -1675,6 +1685,26 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
         gasPrice: quote.transaction.gasPrice ? BigInt(quote.transaction.gasPrice) : undefined,
+        meta: {
+          title: 'Swap via 0x',
+          description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
+            formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
+          } ${buyToken.symbol}`,
+          tokens: [
+            {
+              address: sellToken.address,
+              symbol: sellToken.symbol,
+              decimals: sellToken.decimals,
+              amount: sellAmount
+            },
+            {
+              address: buyToken.address,
+              symbol: buyToken.symbol,
+              decimals: buyToken.decimals,
+              amount: quote.buyAmount
+            }
+          ]
+        }
       };
 
       console.log('Sending transaction with params:', {
@@ -1699,16 +1729,9 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         setEthTransactionStatus('error');
       }
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Swap error:', error);
-      
-      if (error.message?.includes('rejected') || 
-          error.message?.includes('denied') || 
-          error.message?.includes('User rejected')) {
-        setEthTransactionStatus('rejected');
-      } else {
-        setEthTransactionStatus('error');
-      }
+      setEthTransactionStatus('error');
     }
   };
 
