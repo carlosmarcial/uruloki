@@ -127,78 +127,79 @@ export default function SwapConfirmationModal({
   };
 
   return (
-    <SolanaModal 
-      isOpen={isOpen} 
-      onClose={onClose}
-      containerRef={containerRef}
-      showConfetti={transactionStatus === 'success'}
-      style={modalStyle}
-    >
-      <div className="h-full flex flex-col">
-        <h2 className="text-xl font-bold mb-6 text-white pt-2">Confirm Swap</h2>
-        
-        <div className="flex-1 space-y-4">
-          <div className="bg-gray-800 rounded-lg p-4">
-            <p className="text-gray-400 text-sm mb-1">You Receive</p>
-            <p className="text-white text-lg font-semibold">
-              {formatDisplayAmount(buyAmount)} {buyToken}
-            </p>
+    <div style={modalStyle}>
+      <SolanaModal 
+        isOpen={isOpen} 
+        onClose={onClose}
+        containerRef={containerRef}
+        showConfetti={transactionStatus === 'success'}
+      >
+        <div className="h-full flex flex-col">
+          <h2 className="text-xl font-bold mb-6 text-white pt-2">Confirm Swap</h2>
+          
+          <div className="flex-1 space-y-4">
+            <div className="bg-gray-800 rounded-lg p-4">
+              <p className="text-gray-400 text-sm mb-1">You Receive</p>
+              <p className="text-white text-lg font-semibold">
+                {formatDisplayAmount(buyAmount)} {buyToken}
+              </p>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-4">
+              <p className="text-gray-400 text-sm mb-1">You Pay</p>
+              <p className="text-white text-lg font-semibold">
+                {formatDisplayAmount(sellAmount)} {sellToken}
+              </p>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Slippage Tolerance</span>
+                <span className="text-white">{slippage}%</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Network</span>
+                <span className="text-white">Solana</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Uruloki Fee</span>
+                <span className="text-white">{JUPITER_FEE_BPS / 100}%</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                A {JUPITER_FEE_BPS / 100}% fee is applied to help maintain and improve our services. 
+                These fees are also used to buy and burn $TSUKA tokens, reducing the total supply.
+              </p>
+            </div>
+
+            {renderTransactionStatus()}
           </div>
 
-          <div className="bg-gray-800 rounded-lg p-4">
-            <p className="text-gray-400 text-sm mb-1">You Pay</p>
-            <p className="text-white text-lg font-semibold">
-              {formatDisplayAmount(sellAmount)} {sellToken}
-            </p>
-          </div>
-
-          <div className="bg-gray-800 rounded-lg p-4 space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Slippage Tolerance</span>
-              <span className="text-white">{slippage}%</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Network</span>
-              <span className="text-white">Solana</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Uruloki Fee</span>
-              <span className="text-white">{JUPITER_FEE_BPS / 100}%</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              A {JUPITER_FEE_BPS / 100}% fee is applied to help maintain and improve our services. 
-              These fees are also used to buy and burn $TSUKA tokens, reducing the total supply.
-            </p>
-          </div>
-
-          {renderTransactionStatus()}
-        </div>
-
-        <div className="mt-auto pt-4">
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              disabled={transactionStatus === 'pending'}
-            >
-              {transactionStatus === 'success' ? 'Close' : 'Cancel'}
-            </button>
-            {transactionStatus !== 'success' && (
+          <div className="mt-auto pt-4">
+            <div className="flex gap-3">
               <button
-                onClick={onConfirm}
-                disabled={isLoading || transactionStatus === 'pending'}
-                className={`flex-1 px-4 py-3 bg-purple-500 text-white rounded-lg
-                  ${(isLoading || transactionStatus === 'pending')
-                    ? 'opacity-50 cursor-not-allowed' 
-                    : 'hover:bg-purple-600 transition-colors'
-                  }`}
+                onClick={onClose}
+                className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                disabled={transactionStatus === 'pending'}
               >
-                {transactionStatus === 'pending' ? 'Confirming...' : 'Confirm Swap'}
+                {transactionStatus === 'success' ? 'Close' : 'Cancel'}
               </button>
-            )}
+              {transactionStatus !== 'success' && (
+                <button
+                  onClick={onConfirm}
+                  disabled={isLoading || transactionStatus === 'pending'}
+                  className={`flex-1 px-4 py-3 bg-purple-500 text-white rounded-lg
+                    ${(isLoading || transactionStatus === 'pending')
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : 'hover:bg-purple-600 transition-colors'
+                    }`}
+                >
+                  {transactionStatus === 'pending' ? 'Confirming...' : 'Confirm Swap'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </SolanaModal>
+      </SolanaModal>
+    </div>
   );
 }
