@@ -496,10 +496,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       console.log('Approval transaction submitted:', hash);
 
       // Wait for transaction confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({
+      const { data: receipt } = await publicClient.waitForTransactionReceipt({
         hash,
-        timeout: 60_000,
+        confirmations: 1
       });
+
+      if (receipt.status === 'reverted') {
+        throw new Error('Approval transaction reverted');
+      }
 
       console.log('Approval confirmed:', receipt);
       setNeedsAllowance(false);
@@ -1633,12 +1637,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         console.log('Approval transaction submitted:', hash);
 
         // Wait for confirmation
-        const receipt = await waitForTransaction(config, {
+        const { data: receipt } = await publicClient.waitForTransactionReceipt({
           hash,
-          confirmations: 1,
+          confirmations: 1
         });
 
-        console.log('Approval transaction receipt:', receipt);
+        if (receipt.status === 'reverted') {
+          throw new Error('Approval transaction reverted');
+        }
+
+        console.log('Approval confirmed:', receipt);
 
         if (receipt.status !== 'success') {
           throw new Error('Approval transaction failed');
