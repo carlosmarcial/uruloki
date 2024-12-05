@@ -2027,8 +2027,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setError(null);
     // Reset quote response
     setQuoteResponse(null);
-
-    // Reset chart ref to clear the chart
+    // Reset token selection modal state
+    setIsTokenSelectModalOpen(false);
+    setSelectingTokenFor(null);
+    // Reset chart state
     if (chartRef.current) {
       chartRef.current.refreshChart();
     }

@@ -731,57 +731,84 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
 
   useEffect(() => {
     const updateChart = async () => {
-      if (selectedToken) {
-        const network = getNetworkIdentifier(chainId);
-        console.log('Updating chart with:', { 
-          token: selectedToken, 
-          network, 
-          chainId 
-        });
-        
-        try {
-          // For Solana tokens, ensure we're using the correct address format
-          if (network === 'solana') {
-            // Create a copy of the token with properly formatted address
-            const formattedToken = {
-              ...selectedToken,
-              address: selectedToken.address.replace('spl-', '') // Remove any 'spl-' prefix
-            };
-            
-            // Handle special case for native SOL
-            if (formattedToken.address === NATIVE_SOL_ADDRESS) {
-              formattedToken.address = WRAPPED_SOL_ADDRESS;
-            }
-            
-            const url = await fetchGeckoTerminalUrl(formattedToken, network);
-            if (url) {
-              console.log('Setting Solana chart URL:', url);
-              setChartUrl(url);
-              setError(null);
-            }
-          } else {
-            // Handle Ethereum and other chains as before
-            const url = await fetchGeckoTerminalUrl(selectedToken, network);
-            if (url) {
-              console.log('Setting EVM chart URL:', url);
-              setChartUrl(url);
-              setError(null);
-            }
-          }
-        } catch (err) {
-          console.error('Error updating chart:', err);
-          setError('Failed to load chart');
-          setChartUrl('');
-        }
-      } else {
-        // Clear chart when no token is selected
+      // Clear chart and error when no token is selected or when chains don't match
+      if (!selectedToken) {
         setChartUrl('');
         setError(null);
+        return;
+      }
+
+      const network = getNetworkIdentifier(chainId);
+      
+      // Validate that the token belongs to the current chain
+      const isEthereumToken = selectedToken.address.startsWith('0x');
+      const isSolanaToken = !isEthereumToken;
+      
+      // Clear chart if token doesn't match current chain
+      if ((network === 'solana' && isEthereumToken) || 
+          (network !== 'solana' && isSolanaToken)) {
+        setChartUrl('');
+        setError(null);
+        return;
+      }
+
+      console.log('Updating chart with:', { 
+        token: selectedToken, 
+        network, 
+        chainId 
+      });
+      
+      try {
+        // For Solana tokens, ensure we're using the correct address format
+        if (network === 'solana') {
+          // Create a copy of the token with properly formatted address
+          const formattedToken = {
+            ...selectedToken,
+            address: selectedToken.address.replace('spl-', '') // Remove any 'spl-' prefix
+          };
+          
+          // Handle special case for native SOL
+          if (formattedToken.address === NATIVE_SOL_ADDRESS) {
+            formattedToken.address = WRAPPED_SOL_ADDRESS;
+          }
+          
+          const url = await fetchGeckoTerminalUrl(formattedToken, network);
+          if (url) {
+            console.log('Setting Solana chart URL:', url);
+            setChartUrl(url);
+            setError(null);
+          }
+        } else {
+          // Handle Ethereum and other chains as before
+          const url = await fetchGeckoTerminalUrl(selectedToken, network);
+          if (url) {
+            console.log('Setting EVM chart URL:', url);
+            setChartUrl(url);
+            setError(null);
+          }
+        }
+      } catch (err) {
+        console.error('Error updating chart:', err);
+        setError('No trading pools found for this token');
+        setChartUrl('');
       }
     };
 
     updateChart();
   }, [selectedToken, chainId]);
+
+  // Add a new effect to clear chart when activeChain changes
+  useEffect(() => {
+    setChartUrl('');
+    setError(null);
+    setShowAnalysisModal(false);
+    setIsBlurred(false);
+    setAnalysis({
+      analysis: '',
+      loading: false,
+      error: null
+    });
+  }, [activeChain]);
 
   useImperativeHandle(ref, () => ({
     refreshChart: () => {

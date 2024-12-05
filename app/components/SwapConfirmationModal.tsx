@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { SolanaModal } from './SolanaModal';
 import { DEFAULT_SLIPPAGE_BPS, JUPITER_FEE_BPS } from '@/app/constants';
 import { XCircle, CheckCircle, Loader2 } from 'lucide-react';
@@ -55,6 +55,18 @@ export default function SwapConfirmationModal({
   containerRef,
   transactionStatus = 'idle'
 }: SwapConfirmationModalProps) {
+  const [modalStyle, setModalStyle] = useState({
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '88%',
+    minHeight: 0,
+    zIndex: 50,
+    display: 'flex',
+    flexDirection: 'column',
+    marginLeft: '6%',
+  });
+
   const renderTransactionStatus = () => {
     switch (transactionStatus) {
       case 'pending':
@@ -103,12 +115,30 @@ export default function SwapConfirmationModal({
     }
   };
 
+  const updateModalPosition = () => {
+    if (containerRef?.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setModalStyle({
+        position: 'fixed',
+        top: rect.top,
+        left: rect.left,
+        width: `${rect.width * 0.88}`,
+        minHeight: rect.height,
+        zIndex: 50,
+        display: 'flex',
+        flexDirection: 'column',
+        marginLeft: `${rect.width * 0.06}`,
+      });
+    }
+  };
+
   return (
     <SolanaModal 
       isOpen={isOpen} 
       onClose={onClose}
       containerRef={containerRef}
       showConfetti={transactionStatus === 'success'}
+      style={modalStyle}
     >
       <div className="h-full flex flex-col">
         <h2 className="text-xl font-bold mb-6 text-white pt-2">Confirm Swap</h2>
