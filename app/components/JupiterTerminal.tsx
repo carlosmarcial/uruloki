@@ -114,8 +114,10 @@ const JupiterTerminal = () => {
       console.log('Quote received:', quote);
 
       const swapInstructions = await getSwapInstructions({
-        quoteResponse: quote,
-        userPublicKey: publicKey.toString(),
+        swapRequest: {
+          quoteResponse: quote,
+          userPublicKey: publicKey.toString(),
+        }
       });
 
       const {
