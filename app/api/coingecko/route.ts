@@ -6,8 +6,10 @@ const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_DURATION = 60000; // 1 minute
 
 export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const searchParams = new URLSearchParams(url.search);
+
   try {
-    const { searchParams } = new URL(request.url);
     const endpoint = searchParams.get('endpoint');
     const contract_addresses = searchParams.get('contract_addresses');
     const vs_currencies = searchParams.get('vs_currencies');
