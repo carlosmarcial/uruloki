@@ -149,12 +149,8 @@ const itemVariants = {
   }
 };
 
-interface TokenData {
-  name: string;
-  decimals: number;
-  logoURI?: string;
-  address: `0x${string}`; // Make address type more specific for Ethereum tokens
-  symbol: string;
+interface TokenData extends TokenInfo {
+  address: `0x${string}`; // Override the address type to be more specific
   _timestamp?: number;
 }
 
@@ -205,16 +201,6 @@ interface QuoteResponse {
     name: string;
     proportion: string;
   }>;
-}
-
-// Also update the TokenInfo type to match TokenData
-interface TokenInfo {
-  name: string;
-  decimals: number;
-  logoURI?: string;
-  address: `0x${string}`; // Make this match TokenData
-  symbol: string;
-  _timestamp?: number;
 }
 
 const checkBalance = async (solanaWallet: any) => {
@@ -320,10 +306,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // State declarations must be at the top level of your component
   const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
   const [showTokenSelect, setShowTokenSelect] = useState<boolean>(false);
-  const [tokens, setTokens] = useState<TokenInfo[]>([]);
-  const [solanaTokens, setSolanaTokens] = useState<TokenInfo[]>([]);
-  const [selectedFromToken, setSelectedFromToken] = useState<TokenInfo | null>(null);
-  const [selectedToToken, setSelectedToToken] = useState<TokenInfo | null>(null);
+  const [tokens, setTokens] = useState<TokenData[]>([]);
+  const [solanaTokens, setSolanaTokens] = useState<TokenData[]>([]);
+  const [selectedFromToken, setSelectedFromToken] = useState<TokenData | null>(null);
+  const [selectedToToken, setSelectedToToken] = useState<TokenData | null>(null);
 
   // Use the regular HTTP connection with custom fetch
   const connection = useMemo(() => {
