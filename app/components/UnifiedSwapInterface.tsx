@@ -80,6 +80,7 @@ import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceUtils';
 import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
+import { PublicClient, WalletClient } from 'wagmi';
 
 // Update these color utility classes
 const darkThemeClasses = {
@@ -488,6 +489,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Add this function to check and handle approvals
   const checkAndApproveToken = async (tokenAddress: string, spenderAddress: string, amount: bigint) => {
     try {
+      // Add null check for publicClient
+      if (!publicClient) {
+        throw new Error('Public client not available');
+      }
+
       console.log('Checking approval for:', {
         tokenAddress,
         spenderAddress,
@@ -511,6 +517,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       if (currentAllowance < amount) {
         console.log('Approval needed. Requesting approval for:', amount.toString());
         
+        // Add null check for walletClient
+        if (!walletClient) {
+          throw new Error('Wallet client not available');
+        }
+
         const { request } = await publicClient.simulateContract({
           ...tokenContract,
           functionName: 'approve',
@@ -534,7 +545,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       return true;
     } catch (error) {
       console.error('Approval error:', error);
-      throw new Error(`Failed to approve token: ${error.message}`);
+      throw new Error(`Failed to approve token: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
