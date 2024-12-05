@@ -353,12 +353,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const [tokenAllowances, setTokenAllowances] = useState<{[address: string]: bigint}>({});
 
-  const { data: allowance, refetch: refetchAllowance } = useContractRead({
+  // Update the useContractRead hook and remove refetchAllowance
+  const { data: allowance } = useContractRead({
     address: sellToken?.address as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: [address as `0x${string}`, exchangeProxyAddress],
-    enabled: !!sellToken && !!address
+    args: sellToken && address ? [address as `0x${string}`, exchangeProxyAddress] : undefined,
+    query: {
+      enabled: Boolean(sellToken && address)
+    }
   });
 
   useEffect(() => {
@@ -379,23 +382,32 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   const { writeContract: approveToken, data: approveData } = useWriteContract();
 
+  // Update the transaction receipt hooks
   const { isLoading: isApproving, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
-    hash: approveData?.hash,
+    hash: approveData as `0x${string}` // Type assertion for hash
   });
 
-  const { writeContract, data: swapData, isLoading: isSwapPending, isError: isSwapError } = useWriteContract();
-
-  const { isLoading: isSwapLoading, isSuccess: isSwapSuccess } = useWaitForTransactionReceipt({
-    hash: swapData?.hash,
+  const { writeContract, data: swapData } = useWriteContract();
+  const isSwapPending = Boolean(swapData && !isSwapSuccess);
+  const { isSuccess: isSwapSuccess } = useWaitForTransactionReceipt({
+    hash: swapData as `0x${string}` // Type assertion for hash
   });
 
   const { estimateGas } = useEstimateGas();
 
-  // Check if approval is needed and prepare approval request
+  // Update the approval success effect
+  useEffect(() => {
+    if (isApproveSuccess) {
+      setApprovalState('approved');
+      // Remove refetchAllowance call since we're using the query system
+    }
+  }, [isApproveSuccess]);
+
+  // Update the approval check in useEffect
   useEffect(() => {
     if (sellToken && sellAmount && allowance !== undefined && exchangeProxyAddress) {
       const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
-      if (sellAmountBigInt > allowance) {
+      if (allowance && sellAmountBigInt > (allowance as bigint)) {
         setApprovalState('needed');
         setApproveRequest({
           address: sellToken.address,
@@ -409,14 +421,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       }
     }
   }, [sellToken, sellAmount, allowance, exchangeProxyAddress]);
-
-  // Handle approval success
-  useEffect(() => {
-    if (isApproveSuccess) {
-      setApprovalState('approved');
-      refetchAllowance();
-    }
-  }, [isApproveSuccess, refetchAllowance]);
 
   const handleApprove = async () => {
     if (!walletClient || !allowanceTarget || !sellToken || !address) {
