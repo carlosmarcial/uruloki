@@ -1037,7 +1037,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setSelectingTokenFor(null);
   };
 
-  const renderTokenSelector = (token: TokenData | null, onClick: () => void) => (
+  // Update the renderTokenSelector function to handle both token types
+  const renderTokenSelector = (
+    token: TokenData | SolanaToken | null, 
+    onClick: () => void
+  ) => (
     <button
       onClick={onClick}
       className={`
