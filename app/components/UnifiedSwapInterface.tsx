@@ -654,11 +654,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       }
 
       // Check current allowance using readContract
-      const currentAllowance = (await readContract({
+      const currentAllowance = (await readContract(config, {
         address: sellToken.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'allowance',
-        args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`]
+        args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`],
       })) as bigint;
 
       console.log('Current allowance:', currentAllowance.toString());
