@@ -1227,7 +1227,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       setSwapMessage('Preparing transaction...');
       
       // Get swap instructions
-      const swapResult = await fetchJupiterSwapInstructions({
+      const swapResponse = await fetchJupiterSwapInstructions({
         swapRequest: {
           quoteResponse: {
             ...quoteResponse,
@@ -1240,11 +1240,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         }
       });
 
-      if (!swapResult || !swapResult.swapTransaction) {
+      if (!swapResponse || !swapResponse.swapTransaction) {
         throw new Error('Failed to get swap transaction');
       }
 
-      const swapTransactionBuf = Buffer.from(swapResult.swapTransaction, 'base64');
+      const swapTransactionBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
       const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
 
       if (!solanaWallet.signTransaction) {
@@ -1352,7 +1352,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
     const swapResponse = await fetchJupiterSwapInstructions({
       swapRequest: {
-        quoteResponse,
+        quoteResponse: {
+          ...quoteResponse,
+          slippageBps: Math.round(solanaSlippagePercentage * 100)
+        },
         userPublicKey: solanaWallet.publicKey.toString(),
         wrapUnwrapSOL: true,
         slippageBps,
