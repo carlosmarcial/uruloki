@@ -496,16 +496,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       console.log('Approval transaction submitted:', hash);
 
       // Wait for transaction confirmation
-      const { data: receipt } = await publicClient.waitForTransactionReceipt({
-        hash,
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: hash as `0x${string}`,
         confirmations: 1
       });
 
-      if (receipt.status === 'reverted') {
-        throw new Error('Approval transaction reverted');
+      if (receipt.status === 0) {
+        throw new Error('Transaction reverted');
       }
 
-      console.log('Approval confirmed:', receipt);
+      console.log('Transaction confirmed:', receipt);
       setNeedsAllowance(false);
       
       // Refetch quote after approval
@@ -578,11 +578,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         console.log('Approval transaction submitted:', hash);
 
         const receipt = await publicClient.waitForTransactionReceipt({
-          hash,
-          timeout: 60_000,
+          hash: hash as `0x${string}`,
+          confirmations: 1
         });
 
-        console.log('Approval confirmed:', receipt);
+        if (receipt.status === 0) {
+          throw new Error('Transaction reverted');
+        }
+
+        console.log('Transaction confirmed:', receipt);
         return true;
       }
 
@@ -654,7 +658,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         address: sellToken.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'allowance',
-        args: [address, PERMIT2_ADDRESS as `0x${string}`]
+        args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`]
       }) as bigint;
 
       console.log('Current allowance:', currentAllowance.toString());
@@ -682,16 +686,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
           // Wait for transaction confirmation
           const receipt = await client.waitForTransactionReceipt({ 
-            hash,
-            timeout: 60_000,
+            hash: hash as `0x${string}`,
             confirmations: 1
           });
 
-          if (receipt.status === 'reverted') {
-            throw new Error('Approval transaction reverted');
+          if (receipt.status === 0) {
+            throw new Error('Transaction reverted');
           }
 
-          console.log('Approval confirmed:', receipt);
+          console.log('Transaction confirmed:', receipt);
           return true;
         } catch (error) {
           console.error('Error in approval transaction:', error);
@@ -887,8 +890,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
       const hash = await walletClient.writeContract(request);
       await publicClient.waitForTransactionReceipt({ 
-        hash,
-        timeout: 60_000 
+        hash: hash as `0x${string}`,
+        confirmations: 1
       });
       
       console.log('WETH approval successful');
@@ -1637,16 +1640,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         console.log('Approval transaction submitted:', hash);
 
         // Wait for confirmation
-        const { data: receipt } = await publicClient.waitForTransactionReceipt({
-          hash,
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: hash as `0x${string}`,
           confirmations: 1
         });
 
-        if (receipt.status === 'reverted') {
-          throw new Error('Approval transaction reverted');
+        if (receipt.status === 0) {
+          throw new Error('Transaction reverted');
         }
 
-        console.log('Approval confirmed:', receipt);
+        console.log('Transaction confirmed:', receipt);
 
         if (receipt.status !== 'success') {
           throw new Error('Approval transaction failed');
