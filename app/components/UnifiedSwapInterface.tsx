@@ -805,37 +805,37 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Add useEffect to cleanup WebSocket subscription
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
+    let unsubscribe: (() => void) | undefined;
     
     if (pendingTxSignature) {
-      const subscription = solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
-        onStatusChange: (status) => {
-          console.log('Transaction status:', status);
-          setTxStatus(status);
-        },
-        onFinality: (success) => {
-          console.log('Transaction finality:', success);
-          if (success) {
-            setTxStatus('success');
-          } else {
-            setTxStatus('error');
+      try {
+        // Create the subscription and store its cleanup function
+        const { unsubscribe: cleanupFn } = solanaWebSocket.subscribeToTransaction(pendingTxSignature, {
+          onStatusChange: (status) => {
+            console.log('Transaction status:', status);
+            setTxStatus(status);
+          },
+          onFinality: (success) => {
+            console.log('Transaction finality:', success);
+            if (success) {
+              setTxStatus('success');
+            } else {
+              setTxStatus('error');
+            }
           }
-        }
-      });
-      
-      cleanup = () => {
-        try {
-          subscription.then(sub => sub.unsubscribe());
-        } catch (error) {
-          console.error('Error cleaning up subscription:', error);
-        }
-      };
+        });
+        
+        // Store the cleanup function
+        unsubscribe = cleanupFn;
+      } catch (error) {
+        console.error('Error subscribing to transaction:', error);
+      }
     }
 
     // Return cleanup function
     return () => {
-      if (cleanup) {
-        cleanup();
+      if (unsubscribe) {
+        unsubscribe();
       }
     };
   }, [pendingTxSignature]);
