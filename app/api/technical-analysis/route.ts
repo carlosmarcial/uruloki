@@ -17,6 +17,12 @@ function formatLargeNumber(value: string): string {
   return `$${Math.round(num).toLocaleString('en-US')}`;
 }
 
+interface Pool {
+  name: string;
+  dex: string;
+  liquidity: string;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -75,7 +81,7 @@ Market Metrics:
 - Total DEX Liquidity: ${formatLargeNumber(marketData.liquidity.total)}
 - Liquidity/Market Cap Ratio: ${((Number(marketData.liquidity.total.replace(/[^0-9.-]/g, '')) / Number(marketData.liquidity.marketCap.replace(/[^0-9.-]/g, ''))) * 100).toFixed(2)}%
 - Top Liquidity Pools:
-${marketData.liquidity.topPools.map(pool => `  • ${pool.name} (${pool.dex}): ${pool.liquidity}`).join('\n')}
+${marketData.liquidity.topPools.map((pool: Pool) => `  • ${pool.name} (${pool.dex}): ${pool.liquidity}`).join('\n')}
 
 Please provide a comprehensive technical analysis focusing on:
 1. Price Action Analysis (using price changes across timeframes)
