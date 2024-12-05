@@ -1054,7 +1054,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     };
 
     loadTokens();
-  }, [activeChain, chainId, fetchSolanaTokens]);
+  }, [chainId, activeChain, fetchSolanaTokens]);
 
   const openTokenSelectModal = (type: 'sell' | 'buy') => {
     setSelectingTokenFor(type);
@@ -2241,12 +2241,24 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           const solanaTokensList = await fetchSolanaTokens();
           console.log('Fetched Solana tokens:', solanaTokensList.length);
           setSolanaTokens(solanaTokensList);
-          setTokens(solanaTokensList); // Use the same tokens state for both chains
+          setTokens(solanaTokensList); // Solana tokens don't need transformation
         } else {
           console.log('Fetching EVM tokens...');
           const fetchedTokens = await fetchTokenList(chainId);
           console.log('Fetched EVM tokens:', fetchedTokens.length);
-          setTokens(fetchedTokens);
+          
+          // Transform the tokens to ensure proper typing
+          const transformedTokens: TokenData[] = fetchedTokens.map(token => ({
+            ...token,
+            address: token.address.toLowerCase().startsWith('0x') 
+              ? (token.address as `0x${string}`) 
+              : (`0x${token.address}` as `0x${string}`),
+            chainId,
+            logoURI: token.logoURI || '',
+            _timestamp: Date.now()
+          }));
+
+          setTokens(transformedTokens);
         }
       } catch (error) {
         console.error('Error fetching tokens:', error);
