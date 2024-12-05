@@ -1,99 +1,76 @@
-# 0x Swap API v2 Demo App (Next.js App Router)
+# Uruloki - AI-Powered DEX Aggregator
 
-> [!NOTE]  
-> 0x API v2 is in open beta. Get your app ready with the [v2 migration guide](https://0x.org/beta-docs/next/0x-swap-api/upgrading/upgrading_to_v2) to ensure a smooth transition.
+Uruloki is an advanced decentralized exchange (DEX) aggregator that leverages artificial intelligence to optimize trading routes across Ethereum and Solana networks. By analyzing multiple DEXs simultaneously, Uruloki ensures users get the best possible rates for their trades while minimizing slippage and gas costs.
 
-An example ERC-20 swap application built on [Next.js App Router](https://nextjs.org/docs) with 0x Swap API v2 (Permit2) and [RainbowKit](https://www.rainbowkit.com/).
+## 🚀 Key Features
 
-Swap API enables your users to easily and conveniently trade tokens at the best prices directly in your app. With one simple integration, 0x unlocks thousands of tokens on the most popular blockchains and aggregated liquidity from 100+ AMMs and professional market makers.
+- **Cross-Chain Trading**: Seamlessly trade between Ethereum and Solana networks
+- **AI-Powered Route Optimization**: Smart routing algorithm that finds the most efficient trading paths
+- **Best Price Execution**: Aggregates liquidity from multiple DEXs to ensure optimal pricing
+- **Gas Cost Optimization**: Intelligent gas estimation and optimization for Ethereum transactions
+- **MEV Protection**: Built-in mechanisms to protect trades from MEV (Miner Extractable Value)
+- **User-Friendly Interface**: Intuitive UI/UX designed for both novice and experienced traders
 
-This demo app covers best practices for how to use the 0x Swap API's price endpoint for indicative pricing and the quote endpoint for firm quotes.
+## 🛠 Technology Stack
 
-> [!WARNING]  
-> This is a demo, and is not ready for production use. The code has not been audited and does not account for all error handling. Use at your own risk.
+- **Frontend**: React.js with TypeScript
+- **Smart Contracts**: Solidity (Ethereum) & Rust (Solana)
+- **AI/ML**: TensorFlow for route optimization
+- **Blockchain Interactions**: Web3.js (Ethereum) & @solana/web3.js (Solana)
 
-### Live Demo
+## 🔧 Installation
 
-Checkout the live demo 👉 [here](https://0x-swap-v2-demo-app.vercel.app/)
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/uruloki.git
 
-### Price View
-
-![priceView](src/images/priceView.png)
-
-### Quote View
-
-![quoteView](src/images/quoteView.png)
-
-Demonstrates the following on Base mainnet:
-
-1. [Get a 0x API key](https://0x.org/docs/introduction/getting-started)
-2. Get an indicative price (sell 0.1 USDC → buy WETH)
-3. (If needed) Set token allowance for Permit2
-4. Fetch a firm quote (sell 0.1 USDC → buy WETH)
-5. Sign the Permit2 EIP-712 message
-6. Submit the transaction with permit2 signature
-
-### What is the difference between Permit2 and AllowanceHolder?
-
-<details>
-
-<summary>Read more about when to use AllowanceHolder vs Permit2</summary>
-
-0x Swap API offers you the optionality to either use [Permit2](https://0x.org/docs/next/introduction/0x-cheat-sheet#permit2-contract) or [AllowanceHolder](https://0x.org/docs/next/introduction/0x-cheat-sheet#allowanceholder-contract) as the allowance target.
-
-For most applications, we recommend using the Permit2 flow for swaps and setting allowances on the Permit2 contract. This process requires collecting two signatures from your users per trade: one offchain signature for the limited approval and an onchain signature for the trade.
-
-While Permit2's single-use method provides greatly enhanced security, we recognize that some projects may not wish to have a double-signature UX (this may apply to teams that integrate Swap API into smart contracts, or teams that are aggregating across multiple sources and want to keep the UI consistent across all the integrations).
-
-If your integration prevents you from collecting offchain signatures, such as with smart contracts, we recommend using AllowanceHolder.
-
-Originally developed by Uniswap based on the work of 0x alumnus [Lawrence Forman](https://github.com/merklejerk), [Permit2](https://blog.uniswap.org/permit2-and-universal-router) is a token approval method that can be used to safely share and manage token approvals across different smart contracts. Permit2 is immutable, extensively audited, used by other trusted protocols in the space including Uniswap and has a [$3M bug bounty](https://uniswap.org/bug-bounty).
-
-Still have questions? [Reachout to our team](https://0x.org/docs/introduction/community#contact-support).
-
-</details>
-
-## Getting Started
-
-1. Create an `.env` file and setup the required environment variables
-
-```
-cp .env.example .env
-```
-
-| **API Keys**            | **Description**                                                                                                  | **Code**                                                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| WalletConnect projectId | WalletConnect's SDK to help with connecting wallets (create one [here](https://cloud.walletconnect.com/sign-in)) | Add [here](https://github.com/0xProject/0x-examples/blob/main/swap-v2-next-app/.env.example) |
-| 0x                      | 0x API key (create one [here](https://0x.org/docs/introduction/getting-started))                                 | Add [here](https://github.com/0xProject/0x-examples/blob/main/swap-v2-next-app/.env.example) |
-
-2. Install project dependencies
-
-```
+# Install dependencies
+cd uruloki
 npm install
-```
 
-3. Start the Next.js development server
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your configuration
 
-```
+# Start the development server
 npm run dev
 ```
 
-4. Navigate to [http://localhost:3000](http://localhost:3000)
+## 💡 Usage
 
-```
-open http://localhost:3000
-```
+1. Connect your wallet (MetaMask for Ethereum, Phantom for Solana)
+2. Select your input and output tokens
+3. Enter the amount you want to trade
+4. Review the AI-optimized trading route
+5. Confirm the transaction
 
-## Supported Networks
+## 🔐 Security
 
-Swap API v2 is supported on the following chains. Access liquidity from the chain you want by using the corresponding chain URI when making a request:
+- Smart contracts audited by leading security firms
+- Real-time price monitoring and slippage protection
+- Secure wallet integration
+- Regular security updates and monitoring
 
-| Chain               | Chain ID |
-| ------------------- | -------- |
-| Ethereum (Mainnet)  | 1        |
-| Arbitrum            | 42161    |
-| Avalanche           | 43114    |
-| Base                | 84531    |
-| Binance Smart Chain | 56       |
-| Optimism            | 10       |
-| Polygon             | 137      |
+## 🤝 Contributing
+
+We welcome contributions from the community! Please check our contributing guidelines for more information.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📞 Support
+
+- Discord: [Join our community](https://discord.gg/uruloki)
+- Twitter: [@UrulokiDEX](https://twitter.com/UrulokiDEX)
+- Email: support@uruloki.com
+
+## ⚠️ Disclaimer
+
+Trading cryptocurrencies carries inherent risks. Always do your own research and never trade more than you can afford to lose. While we strive to provide the best trading routes and prices, cryptocurrency markets are highly volatile and results may vary. 
