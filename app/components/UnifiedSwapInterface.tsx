@@ -1461,11 +1461,19 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             cleanup();
             reject(new Error('Transaction failed'));
           }
+        },
+        onFinality: (success) => {
+          if (success && !isResolved) {
+            isResolved = true;
+            cleanup();
+            resolve(signature);
+          } else if (!success && !isResolved) {
+            isResolved = true;
+            cleanup();
+            reject(new Error('Transaction failed on finality'));
+          }
         }
-      }).catch(error => {
-        console.error('WebSocket subscription error:', error);
-        // Don't fail here, let polling handle it
-      });
+      })
 
       // Set overall timeout
       timeoutId = setTimeout(() => {
