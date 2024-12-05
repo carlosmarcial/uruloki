@@ -501,7 +501,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         confirmations: 1
       });
 
-      if (receipt.status === 0) {
+      if (receipt.status === 'reverted') {
         throw new Error('Transaction reverted');
       }
 
@@ -574,15 +574,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           account: address,
         });
 
-        const hash = await walletClient.writeContract(request);
+        const hash = await walletClient.writeContract(request) as `0x${string}`;
         console.log('Approval transaction submitted:', hash);
 
         const receipt = await publicClient.waitForTransactionReceipt({
-          hash: hash as `0x${string}`,
+          hash,
           confirmations: 1
         });
 
-        if (receipt.status === 0) {
+        if (receipt.status === 'reverted') {
           throw new Error('Transaction reverted');
         }
 
@@ -654,12 +654,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       }
 
       // Check current allowance using readContract
-      const currentAllowance = await client.readContract({
+      const currentAllowance = (await readContract({
         address: sellToken.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'allowance',
         args: [address as `0x${string}`, PERMIT2_ADDRESS as `0x${string}`]
-      }) as bigint;
+      })) as bigint;
 
       console.log('Current allowance:', currentAllowance.toString());
       console.log('Required amount:', sellAmount.toString());
@@ -690,7 +690,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             confirmations: 1
           });
 
-          if (receipt.status === 0) {
+          if (receipt.status === 'reverted') {
             throw new Error('Transaction reverted');
           }
 
@@ -1636,16 +1636,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         });
 
         // Send approval transaction
-        const hash = await writeContract(request);
+        const hash = await writeContract(request) as `0x${string}`;
         console.log('Approval transaction submitted:', hash);
 
         // Wait for confirmation
         const receipt = await publicClient.waitForTransactionReceipt({
-          hash: hash as `0x${string}`,
+          hash,
           confirmations: 1
         });
 
-        if (receipt.status === 0) {
+        if (receipt.status === 'reverted') {
           throw new Error('Transaction reverted');
         }
 
