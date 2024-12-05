@@ -991,29 +991,58 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     fetchTokensForChain();
   }, [fetchTokensForChain, chainId]);
 
+  // Update the fetchSolanaTokens function to return the tokens
   const fetchSolanaTokens = useCallback(async () => {
-    const response = await fetch('https://token.jup.ag/strict');
-    const tokens = await response.json();
-    
-    // Add native SOL to the list
-    tokens.unshift({
-      address: '11111111111111111111111111111111',
-      symbol: 'SOL',
-      name: 'Solana',
-      decimals: 9,
-      logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'
-    });
+    try {
+      const response = await fetch('https://token.jup.ag/strict');
+      const tokens = await response.json();
+      
+      // Add native SOL to the list
+      const tokensList = [{
+        address: '11111111111111111111111111111111',
+        symbol: 'SOL',
+        name: 'Solana',
+        decimals: 9,
+        logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'
+      }, ...tokens];
 
-    setSolanaTokens(tokens);
+      // Set the state
+      setSolanaTokens(tokensList);
+      
+      // Return the tokens array
+      return tokensList;
+    } catch (error) {
+      console.error('Error fetching Solana tokens:', error);
+      return [];
+    }
   }, []);
 
+  // Update the effect that uses fetchSolanaTokens
   useEffect(() => {
-    if (activeChain === 'ethereum') {
-      fetchTokensForChain();
-    } else if (activeChain === 'solana') {
-      fetchSolanaTokens();
-    }
-  }, [activeChain, chainId, fetchTokensForChain, fetchSolanaTokens]);
+    const loadTokens = async () => {
+      setIsLoadingTokens(true);
+      try {
+        if (activeChain === 'solana') {
+          console.log('Fetching Solana tokens...');
+          const solanaTokensList = await fetchSolanaTokens();
+          console.log('Fetched Solana tokens:', solanaTokensList.length);
+          setTokens(solanaTokensList); // Use the same tokens state for both chains
+        } else {
+          console.log('Fetching EVM tokens...');
+          const fetchedTokens = await fetchTokenList(chainId);
+          console.log('Fetched EVM tokens:', fetchedTokens.length);
+          setTokens(fetchedTokens);
+        }
+      } catch (error) {
+        console.error('Error fetching tokens:', error);
+        setError('Failed to fetch tokens');
+      } finally {
+        setIsLoadingTokens(false);
+      }
+    };
+
+    loadTokens();
+  }, [activeChain, chainId, fetchSolanaTokens]);
 
   const openTokenSelectModal = (type: 'sell' | 'buy') => {
     setSelectingTokenFor(type);
@@ -2216,7 +2245,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     };
 
     fetchTokens();
-  }, [chainId, activeChain]);
+  }, [chainId, activeChain, fetchSolanaTokens]);
 
   useEffect(() => {
     // Initialize WebSocket connection
