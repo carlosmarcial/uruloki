@@ -279,7 +279,9 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
   const [showTokenSelect, setShowTokenSelect] = useState<boolean>(false);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
-  const [solanaTokens, setSolanaTokens] = useState<SolanaToken[]>([]);
+  const [solanaTokens, setSolanaTokens] = useState<TokenInfo[]>([]);
+  const [selectedFromToken, setSelectedFromToken] = useState<TokenInfo | null>(null);
+  const [selectedToToken, setSelectedToToken] = useState<TokenInfo | null>(null);
 
   // Use the regular HTTP connection with custom fetch
   const connection = useMemo(() => {

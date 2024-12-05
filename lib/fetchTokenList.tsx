@@ -15,7 +15,7 @@ import {
 const SOLANA_CHAIN_ID = 101;
 const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
 
-export interface Token {
+export interface TokenInfo {
   address: string;
   chainId: number;
   decimals: number;
@@ -24,11 +24,11 @@ export interface Token {
   logoURI: string;
 }
 
-export const fetchTokenList = async (chainId: number): Promise<Token[]> => {
+export const fetchTokenList = async (chainId: number): Promise<TokenInfo[]> => {
   try {
     console.log(`Fetching token list for chain ID: ${chainId}`);
     
-    let allTokens: Token[] = [];
+    let allTokens: TokenInfo[] = [];
 
     // Special handling for Solana
     if (chainId === SOLANA_CHAIN_ID) {
@@ -53,7 +53,7 @@ export const fetchTokenList = async (chainId: number): Promise<Token[]> => {
         try {
           const response = await axios.get(tokenListUrl);
           const chainTokens = response.data.tokens.filter(
-            (token: Token) => token.chainId === chainId
+            (token: TokenInfo) => token.chainId === chainId
           );
           console.log(`Fetched ${chainTokens.length} tokens from main list`);
           allTokens = [...allTokens, ...chainTokens];
@@ -70,7 +70,7 @@ export const fetchTokenList = async (chainId: number): Promise<Token[]> => {
               'https://raw.githubusercontent.com/traderjoe-xyz/joe-tokenlists/main/mc.tokenlist.json'
             );
             const traderJoeTokens = traderJoeResponse.data.tokens.filter(
-              (token: Token) => token.chainId === AVALANCHE_CHAIN_ID
+              (token: TokenInfo) => token.chainId === AVALANCHE_CHAIN_ID
             );
             allTokens = [...allTokens, ...traderJoeTokens];
           } catch (error) {
@@ -107,7 +107,7 @@ export const fetchTokenList = async (chainId: number): Promise<Token[]> => {
 };
 
 // Helper function to get native token for each chain
-const getNativeToken = (chainId: number): Token | null => {
+const getNativeToken = (chainId: number): TokenInfo | null => {
   switch (chainId) {
     case ETHEREUM_CHAIN_ID:
       return {
