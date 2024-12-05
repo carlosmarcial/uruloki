@@ -1797,7 +1797,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     };
   };
 
-  // Update the handleEthereumSwap function to use the new createSwapMeta function
+  // Update the handleEthereumSwap function
   const handleEthereumSwap = async (): Promise<void> => {
     if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
       console.error('Missing required parameters');
@@ -1818,47 +1818,53 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
       // First check if we need to approve tokens for Permit2
       if (sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
-        const currentAllowance = (await publicClient.readContract({
-          address: sellToken.address as `0x${string}`,
-          abi: ERC20_ABI,
-          functionName: 'allowance',
-          args: [
-            address as `0x${string}`, 
-            PERMIT2_ADDRESS as `0x${string}`
-          ]
-        })) as bigint;  // Add type assertion here
-
-        const sellAmountBigInt = BigInt(sellAmountInBaseUnits);
-        
-        if (currentAllowance < sellAmountBigInt) {
-          console.log('Approving Permit2...');
-          const { request } = await publicClient.simulateContract({
+        try {
+          const currentAllowance = await publicClient.readContract({
             address: sellToken.address as `0x${string}`,
             abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
-            account: address,
-          });
+            functionName: 'allowance',
+            args: [
+              address as `0x${string}`, 
+              PERMIT2_ADDRESS as `0x${string}`
+            ]
+          }) as bigint;
 
-          // Send the transaction
-          await writeContract(request);
+          const sellAmountBigInt = BigInt(sellAmountInBaseUnits);
+          
+          if (currentAllowance < sellAmountBigInt) {
+            console.log('Approving Permit2...');
+            const { request } = await publicClient.simulateContract({
+              address: sellToken.address as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: 'approve',
+              args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
+              account: address,
+            });
 
-          // Wait for the transaction hash from the hook data
-          if (!approveData) {
-            throw new Error('No transaction hash received');
+            // Send the transaction
+            await writeContract(request);
+
+            // Wait for the transaction hash from the hook data
+            if (!approveData) {
+              throw new Error('No transaction hash received');
+            }
+
+            // Wait for confirmation
+            const receipt = await publicClient.waitForTransactionReceipt({
+              hash: approveData,
+              confirmations: 1
+            });
+
+            if (receipt.status === 'reverted') {
+              throw new Error('Transaction reverted');
+            }
+
+            console.log('Permit2 approved');
           }
-
-          // Wait for confirmation
-          const receipt = await publicClient.waitForTransactionReceipt({
-            hash: approveData,
-            confirmations: 1
-          });
-
-          if (receipt.status === 'reverted') {
-            throw new Error('Transaction reverted');
-          }
-
-          console.log('Permit2 approved');
+        } catch (error) {
+          console.error('Error checking/setting allowance:', error);
+          setEthTransactionStatus('error');
+          return;
         }
       }
 
