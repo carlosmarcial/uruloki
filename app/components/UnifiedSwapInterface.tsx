@@ -168,6 +168,55 @@ interface SolanaToken {
   daily_volume: number;
 }
 
+// Add this interface after the TokenData and SolanaToken interfaces
+interface QuoteResponse {
+  buyAmount: string;
+  transaction: {
+    to: string;
+    data: string;
+    value: string;
+    gas?: string;
+    gasPrice?: string;
+  };
+  permit2?: {
+    eip712: {
+      domain: {
+        name: string;
+        version: string;
+        chainId: number;
+        verifyingContract: string;
+      };
+      types: {
+        [key: string]: Array<{ name: string; type: string }>;
+      };
+      message: {
+        [key: string]: any;
+      };
+    };
+  };
+  allowanceTarget?: string;
+  price?: string;
+  guaranteedPrice?: string;
+  estimatedPriceImpact?: string;
+  minimumBuyAmount?: string;
+  grossBuyAmount?: string;
+  expectedSlippage?: string;
+  sources?: Array<{
+    name: string;
+    proportion: string;
+  }>;
+}
+
+// Also update the TokenInfo type to match TokenData
+interface TokenInfo {
+  name: string;
+  decimals: number;
+  logoURI?: string;
+  address: `0x${string}`; // Make this match TokenData
+  symbol: string;
+  _timestamp?: number;
+}
+
 const checkBalance = async (solanaWallet: any) => {
   const connection = getConnection();
   const balance = await connection.getBalance(solanaWallet.publicKey);
