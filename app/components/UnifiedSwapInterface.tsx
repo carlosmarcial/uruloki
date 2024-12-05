@@ -203,6 +203,9 @@ interface QuoteResponse {
 }
 
 const checkBalance = async (solanaWallet: any) => {
+  if (!solanaWallet.publicKey) {
+    throw new Error('Wallet not connected');
+  }
   const connection = getConnection();
   const balance = await connection.getBalance(solanaWallet.publicKey);
   const minimumBalance = 0.01 * LAMPORTS_PER_SOL; // 0.01 SOL for fees
@@ -1166,6 +1169,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // since we're now handling everything in the useEffect above
 
   const fetchSwapTransaction = async (quoteResponse: any) => {
+    if (!solanaWallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
+
     const response = await fetch('https://quote-api.jup.ag/v6/swap', {
       method: 'POST',
       headers: {
@@ -1205,8 +1212,9 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [transactionStatus, setTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'rejected' | 'error'>('idle');
 
   const handleConfirmSwap = async () => {
-    if (!solanaWallet.connected || !quoteResponse) return;
-    
+    if (!solanaWallet.connected || !solanaWallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
     try {
       setTransactionStatus('pending');
       setSwapMessage('Preparing transaction...');
@@ -1325,147 +1333,142 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Update the executeSolanaSwap function
   const executeSolanaSwap = async (quoteResponse: any) => {
-    try {
-      if (!solanaWallet || !solanaWallet.publicKey) {
-        throw new Error('Wallet not connected');
+    if (!solanaWallet.publicKey) {
+      throw new Error('Wallet not connected');
+    }
+
+    const slippageBps = Math.round(solanaSlippagePercentage * 100);
+    console.log('Using slippage (bps):', slippageBps);
+
+    const swapResponse = await fetchJupiterSwapInstructions({
+      swapRequest: {
+        quoteResponse,
+        userPublicKey: solanaWallet.publicKey.toString(),
+        wrapUnwrapSOL: true,
+        slippageBps,
+        dynamicComputeUnitLimit: true,
+        useSharedAccounts: true,
+        asLegacyTransaction: false
       }
+    });
 
-      const slippageBps = Math.round(solanaSlippagePercentage * 100);
-      console.log('Using slippage (bps):', slippageBps);
+    if (!swapResponse || !swapResponse.swapTransaction) {
+      throw new Error('Failed to get swap transaction');
+    }
 
-      const swapResponse = await fetchJupiterSwapInstructions({
-        swapRequest: {
-          quoteResponse,
-          userPublicKey: solanaWallet.publicKey.toString(),
-          wrapUnwrapSOL: true,
-          slippageBps,
-          dynamicComputeUnitLimit: true,
-          useSharedAccounts: true,
-          asLegacyTransaction: false
-        }
-      });
+    const swapTransactionBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
+    const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
 
-      if (!swapResponse || !swapResponse.swapTransaction) {
-        throw new Error('Failed to get swap transaction');
-      }
+    if (!solanaWallet.signTransaction) {
+      throw new Error('Wallet does not support transaction signing');
+    }
 
-      const swapTransactionBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
-      const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
+    const signedTransaction = await solanaWallet.signTransaction(transaction);
 
-      if (!solanaWallet.signTransaction) {
-        throw new Error('Wallet does not support transaction signing');
-      }
+    // Send transaction with retries
+    let signature: string | null = null;
+    let retries = 0;
+    const maxRetries = 3;
 
-      const signedTransaction = await solanaWallet.signTransaction(transaction);
-
-      // Send transaction with retries
-      let signature: string | null = null;
-      let retries = 0;
-      const maxRetries = 3;
-
-      while (retries < maxRetries && !signature) {
-        try {
-          signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
-            skipPreflight: true,
-            maxRetries: 3,
-            preflightCommitment: 'processed'
-          });
-          console.log('Transaction sent, signature:', signature);
-          break;
-        } catch (error) {
-          console.error(`Send attempt ${retries + 1} failed:`, error);
-          retries++;
-          if (retries === maxRetries) throw error;
-          await new Promise(resolve => setTimeout(resolve, 1000 * retries));
-        }
-      }
-
-      if (!signature) {
-        throw new Error('Failed to send transaction after retries');
-      }
-
-      // Use both polling and WebSocket for confirmation
-      return new Promise((resolve, reject) => {
-        let isResolved = false;
-        const timeoutDuration = 60000; // 1 minute timeout
-        let timeoutId: NodeJS.Timeout;
-        let pollIntervalId: NodeJS.Timeout;
-
-        const cleanup = () => {
-          clearTimeout(timeoutId);
-          clearInterval(pollIntervalId);
-        };
-
-        // Start polling immediately
-        const pollStatus = async () => {
-          try {
-            const status = await connection.getSignatureStatus(signature!, {
-              searchTransactionHistory: true
-            });
-
-            if (status.value?.err) {
-              if (!isResolved) {
-                isResolved = true;
-                cleanup();
-                reject(new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`));
-              }
-              return;
-            }
-
-            if (status.value?.confirmationStatus === 'confirmed' || 
-                status.value?.confirmationStatus === 'finalized') {
-              if (!isResolved) {
-                isResolved = true;
-                cleanup();
-                resolve(signature);
-              }
-              return;
-            }
-          } catch (error) {
-            console.error('Error polling status:', error);
-          }
-        };
-
-        // Poll every second
-        pollIntervalId = setInterval(pollStatus, 1000);
-        // Initial poll
-        pollStatus();
-
-        // Also use WebSocket for faster confirmation
-        solanaWebSocket.subscribeToTransaction(signature, {
-          onStatusChange: async (status) => {
-            if (status === 'success' && !isResolved) {
-              isResolved = true;
-              cleanup();
-              resolve(signature);
-            } else if (status === 'error' && !isResolved) {
-              isResolved = true;
-              cleanup();
-              reject(new Error('Transaction failed'));
-            }
-          }
-        }).catch(error => {
-          console.error('WebSocket subscription error:', error);
-          // Don't fail here, let polling handle it
+    while (retries < maxRetries && !signature) {
+      try {
+        signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
+          skipPreflight: true,
+          maxRetries: 3,
+          preflightCommitment: 'processed'
         });
+        console.log('Transaction sent, signature:', signature);
+        break;
+      } catch (error) {
+        console.error(`Send attempt ${retries + 1} failed:`, error);
+        retries++;
+        if (retries === maxRetries) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+      }
+    }
 
-        // Set overall timeout
-        timeoutId = setTimeout(() => {
-          // Check one last time before timing out
-          pollStatus().catch(() => {
+    if (!signature) {
+      throw new Error('Failed to send transaction after retries');
+    }
+
+    // Use both polling and WebSocket for confirmation
+    return new Promise((resolve, reject) => {
+      let isResolved = false;
+      const timeoutDuration = 60000; // 1 minute timeout
+      let timeoutId: NodeJS.Timeout;
+      let pollIntervalId: NodeJS.Timeout;
+
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        clearInterval(pollIntervalId);
+      };
+
+      // Start polling immediately
+      const pollStatus = async () => {
+        try {
+          const status = await connection.getSignatureStatus(signature!, {
+            searchTransactionHistory: true
+          });
+
+          if (status.value?.err) {
             if (!isResolved) {
               isResolved = true;
               cleanup();
-              reject(new Error('Transaction confirmation timeout'));
+              reject(new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`));
             }
-          });
-        }, timeoutDuration);
+            return;
+          }
+
+          if (status.value?.confirmationStatus === 'confirmed' || 
+              status.value?.confirmationStatus === 'finalized') {
+            if (!isResolved) {
+              isResolved = true;
+              cleanup();
+              resolve(signature);
+            }
+            return;
+          }
+        } catch (error) {
+          console.error('Error polling status:', error);
+        }
+      };
+
+      // Poll every second
+      pollIntervalId = setInterval(pollStatus, 1000);
+      // Initial poll
+      pollStatus();
+
+      // Also use WebSocket for faster confirmation
+      solanaWebSocket.subscribeToTransaction(signature, {
+        onStatusChange: async (status) => {
+          if (status === 'success' && !isResolved) {
+            isResolved = true;
+            cleanup();
+            resolve(signature);
+          } else if (status === 'error' && !isResolved) {
+            isResolved = true;
+            cleanup();
+            reject(new Error('Transaction failed'));
+          }
+        }
+      }).catch(error => {
+        console.error('WebSocket subscription error:', error);
+        // Don't fail here, let polling handle it
       });
 
-    } catch (error) {
-      console.error('Swap execution failed:', error);
-      throw error;
-    }
+      // Set overall timeout
+      timeoutId = setTimeout(() => {
+        // Check one last time before timing out
+        pollStatus().catch(() => {
+          if (!isResolved) {
+            isResolved = true;
+            cleanup();
+            reject(new Error('Transaction confirmation timeout'));
+          }
+        });
+      }, timeoutDuration);
+    });
+
   };
 
   // Helper function to get address lookup table accounts
@@ -1882,7 +1885,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Move the hook call to the top level
   const solanaTokenBalance = useSolanaTokenBalance(
     activeChain === 'solana' ? sellToken : null,
-    solanaWallet.publicKey,
+    solanaWallet.publicKey || null,
     connection
   );
 
