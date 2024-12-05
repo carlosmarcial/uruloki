@@ -1138,12 +1138,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   const sendTransactionWithRetry = async (connection: Connection, transaction: Transaction, signers: Keypair[], commitment: Commitment = 'confirmed') => {
+    if (!solanaWallet.signTransaction) {
+      throw new Error('Wallet does not support transaction signing');
+    }
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
     transaction.recentBlockhash = blockhash;
     transaction.lastValidBlockHeight = lastValidBlockHeight;
 
     const signedTransaction = await solanaWallet.signTransaction(transaction);
-
     return await connection.sendRawTransaction(signedTransaction.serialize(), {
       skipPreflight: true,
       maxRetries: 3,
@@ -1601,60 +1603,43 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  // Update the createTransactionMeta function with proper null checks
+  // Add this helper function to create transaction metadata
   const createTransactionMeta = (
     sellToken: TokenData,
     buyToken: TokenData,
     sellAmount: string,
     quote: QuoteResponse
   ) => {
-    // Add type guards and null checks
-    if (!sellToken || !buyToken) {
-      throw new Error('Missing token information');
-    }
-
     if (!quote.buyAmount) {
       throw new Error('Quote missing buyAmount');
     }
 
-    try {
-      const buyAmountFormatted = formatUnits(
-        BigInt(quote.buyAmount), 
-        buyToken.decimals
-      );
-
-      return {
-        title: 'Swap via 0x',
-        description: `Swap ${sellAmount} ${sellToken.symbol} for ~${buyAmountFormatted} ${buyToken.symbol}`,
-        tokens: [
-          {
-            address: sellToken.address,
-            symbol: sellToken.symbol,
-            decimals: sellToken.decimals,
-            amount: sellAmount
-          },
-          {
-            address: buyToken.address,
-            symbol: buyToken.symbol,
-            decimals: buyToken.decimals,
-            amount: quote.buyAmount
-          }
-        ]
-      };
-    } catch (error) {
-      throw new Error(`Failed to create transaction metadata: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    return {
+      title: 'Swap via 0x',
+      description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
+        formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
+      } ${buyToken.symbol}`,
+      tokens: [
+        {
+          address: sellToken.address,
+          symbol: sellToken.symbol,
+          decimals: sellToken.decimals,
+          amount: sellAmount
+        },
+        {
+          address: buyToken.address,
+          symbol: buyToken.symbol,
+          decimals: buyToken.decimals,
+          amount: quote.buyAmount
+        }
+      ]
+    };
   };
 
-  // Update the handleEthereumSwap function where it calls createTransactionMeta
+  // Update the relevant part of handleEthereumSwap
   const handleEthereumSwap = async (): Promise<void> => {
     if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
       throw new Error('Missing required parameters');
-    }
-
-    // Ensure sellToken and buyToken are of type TokenData
-    if (!('decimals' in sellToken) || !('decimals' in buyToken)) {
-      throw new Error('Invalid token format');
     }
 
     try {
@@ -1763,12 +1748,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
         gasPrice: quote.transaction.gasPrice ? BigInt(quote.transaction.gasPrice) : undefined,
-        meta: createTransactionMeta(
-          sellToken as TokenData,
-          buyToken as TokenData,
-          sellAmount,
-          quote
-        )
+        meta: createTransactionMeta(sellToken, buyToken, sellAmount, quote)
       };
 
       console.log('Sending transaction with params:', {
