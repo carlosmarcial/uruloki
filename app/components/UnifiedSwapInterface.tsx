@@ -1740,10 +1740,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         }
       }
 
-      // Prepare transaction parameters
+      // Prepare transaction parameters with proper type assertions
       const txParams = {
         to: quote.transaction.to as `0x${string}`,
-        data: txData,
+        data: txData.startsWith('0x') ? (txData as `0x${string}`) : `0x${txData}`,
         value: BigInt(quote.transaction.value || '0'),
         chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
