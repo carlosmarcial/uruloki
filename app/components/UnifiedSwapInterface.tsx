@@ -1638,8 +1638,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Update the relevant part of handleEthereumSwap
   const handleEthereumSwap = async (): Promise<void> => {
+    // Early return if tokens are not selected
     if (!sellToken || !buyToken || !sellAmount || !address || !publicClient) {
-      throw new Error('Missing required parameters');
+      console.error('Missing required parameters');
+      setEthTransactionStatus('error');
+      return;
     }
 
     try {
@@ -1705,7 +1708,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       }
 
       // Handle Permit2 signature if needed
-      let txData = quote.transaction.data;
+      let txData = quote.transaction.data as `0x${string}`;
       if (quote.permit2?.eip712) {
         console.log('Signing Permit2 message...');
         const typedData = {
@@ -1714,7 +1717,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           primaryType: quote.permit2.eip712.primaryType,
           domain: {
             ...quote.permit2.eip712.domain,
-            verifyingContract: quote.permit2.eip712.domain.verifyingContract as `0x${string}` // Cast to correct type
+            verifyingContract: quote.permit2.eip712.domain.verifyingContract as `0x${string}`
           },
           message: quote.permit2.eip712.message
         };
@@ -1733,12 +1736,39 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             size: 32,
           });
           txData = concat([
-            txData as `0x${string}`, // Cast txData to correct type
+            txData,
             signatureLengthInHex, 
             signature
           ]) as `0x${string}`;
         }
       }
+
+      // Ensure we still have valid tokens before creating meta
+      if (!sellToken || !buyToken) {
+        throw new Error('Tokens became invalid during transaction preparation');
+      }
+
+      // Create meta object with guaranteed non-null tokens
+      const meta = {
+        title: 'Swap via 0x',
+        description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
+          formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
+        } ${buyToken.symbol}`,
+        tokens: [
+          {
+            address: sellToken.address,
+            symbol: sellToken.symbol,
+            decimals: sellToken.decimals,
+            amount: sellAmount
+          },
+          {
+            address: buyToken.address,
+            symbol: buyToken.symbol,
+            decimals: buyToken.decimals,
+            amount: quote.buyAmount
+          }
+        ]
+      };
 
       // Prepare transaction parameters with proper type assertions
       const txParams = {
@@ -1748,7 +1778,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
         gasPrice: quote.transaction.gasPrice ? BigInt(quote.transaction.gasPrice) : undefined,
-        meta: createTransactionMeta(sellToken, buyToken, sellAmount, quote)
+        meta
       };
 
       console.log('Sending transaction with params:', {
@@ -2308,7 +2338,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         return; // Exit early for Solana
       }
 
-      // Keep existing Ethereum logic unchanged
+      // Ethereum quote logic
       const sellTokenAddress = sellToken.address === ETH_ADDRESS ? 
         'ETH' : sellToken.address;
       
@@ -2382,7 +2412,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     } catch (error) {
       console.error('Error fetching price:', error);
       setBuyAmount('');
-      setSwapMessage(`Error fetching price: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setSwapMessage(error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsLoadingPrice(false);
     }
