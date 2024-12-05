@@ -419,10 +419,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const { writeContract, data: approveData } = useWriteContract();
 
   // Update the transaction receipt hooks
-  const { isLoading: isApproving, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
-    hash: approveData as `0x${string}`, // Now approveData will be defined
-    enabled: !!approveData, // Only enable the hook when we have a hash
-  });
+  const { isLoading: isApproving, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt(
+    approveData ? {
+      hash: approveData as `0x${string}`,
+      confirmations: 1
+    } : {
+      hash: undefined,
+      confirmations: 1
+    }
+  );
 
   // Remove the duplicate writeContract declaration
   // const { data: swapData } = useWriteContract();
@@ -430,10 +435,15 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const { writeContract: writeSwapContract, data: swapData } = useWriteContract();
 
   // Move this up before using isSwapSuccess
-  const { isSuccess: isSwapSuccess } = useWaitForTransactionReceipt({
-    hash: swapData as `0x${string}`, // Type assertion for hash
-    enabled: !!swapData, // Only enable the hook when we have a hash
-  });
+  const { isSuccess: isSwapSuccess } = useWaitForTransactionReceipt(
+    swapData ? {
+      hash: swapData as `0x${string}`,
+      confirmations: 1
+    } : {
+      hash: undefined,
+      confirmations: 1
+    }
+  );
 
   // Now we can use isSwapSuccess since it's declared
   const isSwapPending = Boolean(swapData && !isSwapSuccess);
