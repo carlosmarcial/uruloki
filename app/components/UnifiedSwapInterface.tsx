@@ -397,8 +397,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // Now we can use isSwapSuccess since it's declared
   const isSwapPending = Boolean(swapData && !isSwapSuccess);
 
-  const { estimateGas } = useEstimateGas();
-
   // Update the approval success effect
   useEffect(() => {
     if (isApproveSuccess) {
@@ -427,7 +425,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   }, [sellToken, sellAmount, allowance, exchangeProxyAddress]);
 
   const handleApprove = async () => {
-    if (!walletClient || !allowanceTarget || !sellToken || !address) {
+    if (!walletClient || !allowanceTarget || !sellToken || !address || !publicClient) {
       console.error('Missing required parameters for approval');
       return;
     }
@@ -440,12 +438,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         abi: ERC20_ABI,
       };
 
-      // First check current allowance
-      const currentAllowance = await publicClient.readContract({
+      // First check current allowance with type assertion
+      const currentAllowance = (await publicClient.readContract({
         ...tokenContract,
         functionName: 'allowance',
         args: [address, allowanceTarget as `0x${string}`],
-      });
+      })) as bigint;
 
       if (currentAllowance > 0n) {
         console.log('Token already has allowance:', currentAllowance.toString());
@@ -787,24 +785,27 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Add this new function to handle WETH approval
   const handleWETHApproval = async (amount: bigint) => {
-    const wethContract = getContract({
-      address: WETH_ADDRESS as `0x${string}`,
-      abi: erc20Abi,
-      publicClient,
-      walletClient,
-    });
+    if (!walletClient || !address || !publicClient) return;
 
-    const allowance = await wethContract.read.allowance([address as `0x${string}`, PERMIT2_ADDRESS]);
-    if (allowance < amount) {
-      try {
-        const { request } = await wethContract.simulate.approve([PERMIT2_ADDRESS, MAX_ALLOWANCE]);
-        const hash = await wethContract.write.approve(request.args);
-        await publicClient.waitForTransactionReceipt({ hash });
-        console.log('WETH approval successful');
-      } catch (error) {
-        console.error('WETH approval failed:', error);
-        throw new Error('WETH approval failed');
-      }
+    try {
+      const { request } = await publicClient.simulateContract({
+        address: WETH_ADDRESS as `0x${string}`,
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
+        account: address
+      });
+
+      const hash = await walletClient.writeContract(request);
+      await publicClient.waitForTransactionReceipt({ 
+        hash,
+        timeout: 60_000 
+      });
+      
+      console.log('WETH approval successful');
+    } catch (error) {
+      console.error('WETH approval failed:', error);
+      throw new Error('WETH approval failed');
     }
   };
 
@@ -2709,6 +2710,20 @@ const formatBalanceDisplay = (balance: number | null, symbol: string) => {
   
   // For numbers < 1, keep all decimal places
   return `Balance: ${balance} ${symbol}`;
+};
+
+const estimateGasForTransaction = async (txParams: any) => {
+  if (!estimateGasAsync) {
+    throw new Error('Gas estimation not available');
+  }
+
+  try {
+    const gasEstimate = await estimateGasAsync(txParams);
+    return gasEstimate;
+  } catch (error) {
+    console.error('Error estimating gas:', error);
+    throw error;
+  }
 };
 
 
