@@ -1235,8 +1235,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           },
           userPublicKey: solanaWallet.publicKey.toString(),
           wrapUnwrapSOL: true,
-          dynamicComputeUnitLimit: true,
-          useSharedAccounts: true,
+          computeUnitPriceMicroLamports: null,
           asLegacyTransaction: false
         }
       });
