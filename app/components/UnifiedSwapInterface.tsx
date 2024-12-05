@@ -885,11 +885,14 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           break;
         default:
           console.log('Using default Ethereum tokens');
-          tokens = await fetchTokenList(chainId);
+          const fetchedTokens = await fetchTokenList(chainId);
+          tokens = fetchedTokens.map(token => ({
+            ...token,
+            address: token.address as `0x${string}` // Ensure address type matches
+          }));
       }
 
       if (tokens && Array.isArray(tokens)) {
-        // Ensure tokens have required properties and are unique
         const validTokens = tokens
           .filter(token => token.address && token.symbol && token.name)
           .filter((token, index, self) => 
@@ -1615,6 +1618,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }>;
   }
 
+  // Update the createSwapMeta function to handle potential null values
   const createSwapMeta = (
     sellToken: TokenData | SolanaToken | null,
     buyToken: TokenData | SolanaToken | null,
