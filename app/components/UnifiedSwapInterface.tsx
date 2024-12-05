@@ -41,7 +41,9 @@ import { WalletButton } from './WalletButton';
 import TokenImage from './TokenImage';
 import { mainnet, polygon, optimism, arbitrum, base, avalanche, bsc, linea, mantle, scroll } from 'wagmi/chains';
 import { fetchJupiterQuote, getInputMint, getOutputMint } from '@/app/utils/jupiterApi';
-import { Connection, sendAndConfirmTransaction, PublicKey, Transaction, VersionedTransaction, TransactionInstruction, Commitment, AddressLookupTableProgram, TransactionMessage, AddressLookupTableAccount, ConnectionConfig, VersionedMessage } from '@solana/web3.js';
+import { Connection, sendAndConfirmTransaction, PublicKey, Transaction, VersionedTransaction, 
+  TransactionInstruction, Commitment, AddressLookupTableProgram, TransactionMessage, 
+  AddressLookupTableAccount, ConnectionConfig, VersionedMessage, Keypair } from '@solana/web3.js';
 import { getConnection, sendAndConfirmTransactionWithRetry, getWebSocketEndpoint } from '../utils/solanaUtils';
 import { SOLANA_RPC_ENDPOINTS } from '@app/constants';
 import { Token as SPLToken, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
@@ -1188,7 +1190,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     return await response.json();
   };
 
-  const sendTransactionWithRetry = async (connection: Connection, transaction: Transaction, signers: Keypair[], commitment: Commitment = 'confirmed') => {
+  const sendTransactionWithRetry = async (
+    connection: Connection, 
+    transaction: Transaction, 
+    signers: Keypair[], 
+    commitment: Commitment = 'confirmed'
+  ) => {
     if (!solanaWallet.signTransaction) {
       throw new Error('Wallet does not support transaction signing');
     }
