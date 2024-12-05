@@ -49,7 +49,7 @@ export default function SwapConfirmationModal({
   containerRef,
   transactionStatus = 'idle'
 }: SwapConfirmationModalProps) {
-  const [modalStyle, setModalStyle] = useState({
+  const [modalStyle, setModalStyle] = useState<React.CSSProperties>({
     position: 'fixed',
     top: 0,
     left: 0,
