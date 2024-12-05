@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { SolanaModal } from './SolanaModal';
 import { DEFAULT_SLIPPAGE_BPS, JUPITER_FEE_BPS } from '@/app/constants';
 import { XCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { formatDisplayAmount } from '../utils/formatAmount';
 
 interface SwapConfirmationModalProps {
   isOpen: boolean;
@@ -18,13 +19,6 @@ interface SwapConfirmationModalProps {
   containerRef?: React.RefObject<HTMLDivElement>;
   transactionStatus?: 'idle' | 'pending' | 'success' | 'rejected' | 'error';
 }
-
-// Helper function to format numbers with commas
-const formatNumberWithCommas = (value: string) => {
-  const [wholePart, decimalPart] = value.split('.');
-  const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return decimalPart ? `${formattedWholePart}.${decimalPart}` : formattedWholePart;
-};
 
 // Add these status-specific styles
 const getStatusStyles = (status: string) => {
@@ -147,14 +141,14 @@ export default function SwapConfirmationModal({
           <div className="bg-gray-800 rounded-lg p-4">
             <p className="text-gray-400 text-sm mb-1">You Receive</p>
             <p className="text-white text-lg font-semibold">
-              {formatNumberWithCommas(buyAmount)} {buyToken}
+              {formatDisplayAmount(buyAmount)} {buyToken}
             </p>
           </div>
 
           <div className="bg-gray-800 rounded-lg p-4">
             <p className="text-gray-400 text-sm mb-1">You Pay</p>
             <p className="text-white text-lg font-semibold">
-              {formatNumberWithCommas(sellAmount)} {sellToken}
+              {formatDisplayAmount(sellAmount)} {sellToken}
             </p>
           </div>
 

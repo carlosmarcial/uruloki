@@ -3,6 +3,7 @@ import { SolanaModal } from './SolanaModal';
 import { XCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { formatUnits } from 'viem';
 import { ETH_DEFAULT_SLIPPAGE_PERCENTAGE, JUPITER_FEE_BPS } from '@/app/constants';
+import { formatDisplayAmount } from '../utils/formatAmount';
 
 interface EthereumConfirmationModalProps {
   isOpen: boolean;
@@ -22,12 +23,6 @@ interface EthereumConfirmationModalProps {
   gasPrice?: bigint;
   chainId: number;
 }
-
-const formatNumberWithCommas = (value: string) => {
-  const [wholePart, decimalPart] = value.split('.');
-  const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return decimalPart ? `${formattedWholePart}.${decimalPart}` : formattedWholePart;
-};
 
 const getExplorerUrl = (chainId: number, hash: string) => {
   const explorers: { [key: number]: string } = {
@@ -141,14 +136,14 @@ export default function EthereumConfirmationModal({
           <div className="bg-gray-800 rounded-lg p-4">
             <p className="text-gray-400 text-sm mb-1">You Receive</p>
             <p className="text-white text-lg font-semibold">
-              {formatNumberWithCommas(buyAmount)} {buyToken?.symbol}
+              {formatDisplayAmount(buyAmount)} {buyToken?.symbol}
             </p>
           </div>
 
           <div className="bg-gray-800 rounded-lg p-4">
             <p className="text-gray-400 text-sm mb-1">You Pay</p>
             <p className="text-white text-lg font-semibold">
-              {formatNumberWithCommas(sellAmount)} {sellToken?.symbol}
+              {formatDisplayAmount(sellAmount)} {sellToken?.symbol}
             </p>
           </div>
 
