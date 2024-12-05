@@ -749,10 +749,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         // Add metadata for better MetaMask display
         meta: {
           title: 'Swap via 0x',
-          description: `Swap ${sellAmount} ${sellToken.symbol} for ~${
-            formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
-          } ${buyToken.symbol}`,
-          tokens: [
+          description: sellToken && buyToken 
+            ? `Swap ${sellAmount} ${sellToken.symbol} for ~${
+                formatUnits(BigInt(quote.buyAmount), buyToken.decimals)
+              } ${buyToken.symbol}`
+            : 'Swap tokens',
+          tokens: sellToken && buyToken ? [
             {
               address: sellToken.address,
               symbol: sellToken.symbol,
@@ -765,7 +767,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               decimals: buyToken.decimals,
               amount: quote.buyAmount
             }
-          ]
+          ] : []
         }
       };
 
