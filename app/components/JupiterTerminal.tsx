@@ -12,6 +12,7 @@ const jupiterAssets = [
   { name: 'USDC', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', decimals: 6},
   { name: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', decimals: 5 },
   { name: 'WIF', mint: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm', decimals: 6},
+  { name: 'TSUKA', mint: 'YourTsukaMintAddressHere', decimals: 6},
 ];
 
 const debounce = <T extends unknown[]>(
@@ -32,33 +33,32 @@ const debounce = <T extends unknown[]>(
 };
 
 const JupiterTerminal = () => {
-  const [selectedFromAsset, setSelectedFromAsset] = useState(jupiterAssets[0]);
-  const [selectedToAsset, setSelectedToAsset] = useState(jupiterAssets[1]);
+  const [fromAsset, setFromAsset] = useState(jupiterAssets[1]);
+  const [toAsset, setToAsset] = useState(jupiterAssets[4]);
   const [fromAmount, setFromAmount] = useState('');
   const [toAmount, setToAmount] = useState(0);
-  const [quoteResponse, setQuoteResponse] = useState(null);
+  const [quoteResponse, setQuoteResponse] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const { connected, publicKey, signTransaction } = useWallet();
   const { connection } = useConnection();
 
   const handleFromAssetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedFromAsset(jupiterAssets.find((asset) => asset.name === event.target.value) || jupiterAssets[0]);
+    setFromAsset(jupiterAssets.find((asset) => asset.name === event.target.value) || jupiterAssets[0]);
   };
 
   const handleToAssetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedToAsset(jupiterAssets.find((asset) => asset.name === event.target.value) || jupiterAssets[0]);
+    setToAsset(jupiterAssets.find((asset) => asset.name === event.target.value) || jupiterAssets[0]);
   };
 
   const handleFromValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
-    // Allow empty string or valid numbers
     if (value === '' || /^\d*\.?\d*$/.test(value)) {
       setFromAmount(value);
     }
   };
 
-  const debounceQuoteCall = useCallback(getQuote, 500), [selectedFromAsset, selectedToAsset]);
+  const debounceQuoteCall = useCallback(debounce(getQuote, 500), [fromAsset, toAsset]);
 
   useEffect(() => {
     if (fromAmount !== '') {
@@ -78,13 +78,13 @@ const JupiterTerminal = () => {
     try {
       const quote = await (
         await fetch(
-          `https://quote-api.jup.ag/v6/quote?inputMint=${selectedFromAsset.mint}&outputMint=${selectedToAsset.mint}&amount=${currentAmount * Math.pow(10, selectedFromAsset.decimals)}&slippage=${DEFAULT_SLIPPAGE_BPS / 100}`
+          `https://quote-api.jup.ag/v6/quote?inputMint=${fromAsset.mint}&outputMint=${toAsset.mint}&amount=${currentAmount * Math.pow(10, fromAsset.decimals)}&slippage=${DEFAULT_SLIPPAGE_BPS / 100}`
         )
       ).json();
 
       if (quote && quote.outAmount) {
         const outAmountNumber =
-          Number(quote.outAmount) / Math.pow(10, selectedToAsset.decimals);
+          Number(quote.outAmount) / Math.pow(10, toAsset.decimals);
         setToAmount(outAmountNumber);
       }
 
@@ -104,23 +104,20 @@ const JupiterTerminal = () => {
 
     setIsLoading(true);
     try {
-      // 1. Get quote
-      const inputAmount = Math.floor(parseFloat(fromAmount) * Math.pow(10, selectedFromAsset.decimals));
+      const inputAmount = Math.floor(parseFloat(fromAmount) * Math.pow(10, fromAsset.decimals));
       const quote = await fetchJupiterQuote({
-        inputMint: selectedFromAsset.mint,
-        outputMint: selectedToAsset.mint,
+        inputMint: fromAsset.mint,
+        outputMint: toAsset.mint,
         amount: inputAmount,
       });
 
       console.log('Quote received:', quote);
 
-      // 2. Get swap instructions
       const swapInstructions = await getSwapInstructions({
         quoteResponse: quote,
         userPublicKey: publicKey.toString(),
       });
 
-      // 3. Prepare transaction
       const {
         computeBudgetInstructions,
         setupInstructions,
@@ -149,11 +146,9 @@ const JupiterTerminal = () => {
 
       const transaction = new VersionedTransaction(messageV0);
 
-      // 4. Sign and send transaction
       const signed = await signTransaction(transaction);
       const signature = await connection.sendRawTransaction(signed.serialize());
 
-      // 5. Confirm transaction
       const confirmation = await connection.confirmTransaction({
         signature,
         blockhash,
@@ -187,7 +182,7 @@ const JupiterTerminal = () => {
               placeholder="0"
             />
             <select
-              value={selectedFromAsset.name}
+              value={fromAsset.name}
               onChange={handleFromAssetChange}
               className="bg-input text-foreground rounded-md p-2"
             >
@@ -209,7 +204,7 @@ const JupiterTerminal = () => {
               readOnly
             />
             <select
-              value={selectedToAsset.name}
+              value={toAsset.name}
               onChange={handleToAssetChange}
               className="bg-input text-foreground rounded-md p-2"
             >
@@ -224,7 +219,7 @@ const JupiterTerminal = () => {
         <div className="flex justify-center items-center">
           <Button
             onClick={handleSwap}
-            disabled={!connected || selectedToAsset.mint === selectedFromAsset.mint || isLoading || parseFloat(fromAmount) <= 0}
+            disabled={!connected || toAsset.mint === fromAsset.mint || isLoading || parseFloat(fromAmount) <= 0}
             className="w-full bg-[#77be44] hover:bg-[#69a93d] text-black font-bold py-2 px-4 rounded"
           >
             {isLoading ? 'Loading...' : 'Swap'}
