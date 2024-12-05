@@ -742,11 +742,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       // Format transaction parameters
       const txParams = {
         to: quote.transaction.to as `0x${string}`,
-        data: txData,
+        data: txData.startsWith('0x') ? txData as `0x${string}` : `0x${txData}` as `0x${string}`,
         value: BigInt(quote.transaction.value || '0'),
-        chainId,
+        chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
-        // Add metadata for better MetaMask display
+        gasPrice: quote.transaction.gasPrice ? BigInt(quote.transaction.gasPrice) : undefined,
         meta: {
           title: 'Swap via 0x',
           description: sellToken && buyToken 
@@ -1602,7 +1602,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           address: sellToken.address as `0x${string}`,
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [spenderAddress as `0x${string}`, MaxUint256],
+          args: [spenderAddress as `0x${string}`, MAX_ALLOWANCE],
           account: address,
         });
 
@@ -1729,7 +1729,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             address: sellToken.address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'approve',
-            args: [PERMIT2_ADDRESS as `0x${string}`, MaxUint256],
+            args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
             account: address,
           });
 
@@ -1812,7 +1812,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       // Prepare transaction parameters with proper type assertions
       const txParams = {
         to: quote.transaction.to as `0x${string}`,
-        data: txData.startsWith('0x') ? (txData as `0x${string}`) : `0x${txData}`,
+        data: txData.startsWith('0x') ? txData as `0x${string}` : `0x${txData}` as `0x${string}`,
         value: BigInt(quote.transaction.value || '0'),
         chainId: Number(chainId),
         gas: quote.transaction.gas ? BigInt(quote.transaction.gas) : undefined,
