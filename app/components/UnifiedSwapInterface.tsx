@@ -1616,7 +1616,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       console.log('Current Permit2 allowance:', allowance?.toString());
       console.log('Required amount:', sellAmountBigInt.toString());
 
-      if (!allowance || sellAmountBigInt > allowance) {
+      if (!allowance || sellAmountBigInt > (allowance as bigint)) {
         console.log('Approval needed, preparing transaction...');
         
         // Prepare approval transaction for Permit2
