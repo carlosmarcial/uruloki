@@ -15,6 +15,7 @@ import WebGLBackground from './components/WebGLBackground';
 import { Providers } from './providers';
 import Header from './components/Header';
 import { WagmiProvider } from 'wagmi';
+import { Metadata } from 'next';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,6 +31,7 @@ const config = createConfig({
 
 const queryClient = new QueryClient();
 
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -39,7 +41,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-
 // Add this to your main application file (e.g., _app.tsx or index.tsx)
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (event) => {
@@ -50,3 +51,4 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+

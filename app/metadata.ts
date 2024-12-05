@@ -1,6 +1,9 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: "Uruloki",
-  description: "AI-powered on-chain dex aggregator",
+  title: 'Uruloki DEX',
+  description: 'On-chain dex aggregator',
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
