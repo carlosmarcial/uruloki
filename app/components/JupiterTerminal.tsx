@@ -7,7 +7,7 @@ import Button from "./button";
 import { DEFAULT_SLIPPAGE_BPS } from '../constants';
 import { fetchJupiterQuote, fetchJupiterSwapInstructions as getSwapInstructions, deserializeInstruction, getAddressLookupTableAccounts } from '../utils/jupiterApi';
 
-const assets = [
+const jupiterAssets = [
   { name: 'SOL', mint: 'So11111111111111111111111111111111111111112', decimals: 9},
   { name: 'USDC', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', decimals: 6},
   { name: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', decimals: 5 },
@@ -32,9 +32,9 @@ const debounce = <T extends unknown[]>(
 };
 
 const JupiterTerminal = () => {
-  const [fromAsset, setFromAsset] = useState(assets[0]);
-  const [toAsset, setToAsset] = useState(assets[1]);
-  const [fromAmount, setFromAmount] = useState(''); // Changed to empty string
+  const [selectedFromAsset, setSelectedFromAsset] = useState(jupiterAssets[0]);
+  const [selectedToAsset, setSelectedToAsset] = useState(jupiterAssets[1]);
+  const [fromAmount, setFromAmount] = useState('');
   const [toAmount, setToAmount] = useState(0);
   const [quoteResponse, setQuoteResponse] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -43,11 +43,11 @@ const JupiterTerminal = () => {
   const { connection } = useConnection();
 
   const handleFromAssetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setFromAsset(assets.find((asset) => asset.name === event.target.value) || assets[0]);
+    setSelectedFromAsset(jupiterAssets.find((asset) => asset.name === event.target.value) || jupiterAssets[0]);
   };
 
   const handleToAssetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setToAsset(assets.find((asset) => asset.name === event.target.value) || assets[0]);
+    setSelectedToAsset(jupiterAssets.find((asset) => asset.name === event.target.value) || jupiterAssets[0]);
   };
 
   const handleFromValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,7 +58,7 @@ const JupiterTerminal = () => {
     }
   };
 
-  const debounceQuoteCall = useCallback(getQuote, 500), [fromAsset, toAsset]);
+  const debounceQuoteCall = useCallback(getQuote, 500), [selectedFromAsset, selectedToAsset]);
 
   useEffect(() => {
     if (fromAmount !== '') {
@@ -78,13 +78,13 @@ const JupiterTerminal = () => {
     try {
       const quote = await (
         await fetch(
-          `https://quote-api.jup.ag/v6/quote?inputMint=${fromAsset.mint}&outputMint=${toAsset.mint}&amount=${currentAmount * Math.pow(10, fromAsset.decimals)}&slippage=${DEFAULT_SLIPPAGE_BPS / 100}`
+          `https://quote-api.jup.ag/v6/quote?inputMint=${selectedFromAsset.mint}&outputMint=${selectedToAsset.mint}&amount=${currentAmount * Math.pow(10, selectedFromAsset.decimals)}&slippage=${DEFAULT_SLIPPAGE_BPS / 100}`
         )
       ).json();
 
       if (quote && quote.outAmount) {
         const outAmountNumber =
-          Number(quote.outAmount) / Math.pow(10, toAsset.decimals);
+          Number(quote.outAmount) / Math.pow(10, selectedToAsset.decimals);
         setToAmount(outAmountNumber);
       }
 
@@ -105,10 +105,10 @@ const JupiterTerminal = () => {
     setIsLoading(true);
     try {
       // 1. Get quote
-      const inputAmount = Math.floor(parseFloat(fromAmount) * Math.pow(10, fromAsset.decimals));
+      const inputAmount = Math.floor(parseFloat(fromAmount) * Math.pow(10, selectedFromAsset.decimals));
       const quote = await fetchJupiterQuote({
-        inputMint: fromAsset.mint,
-        outputMint: toAsset.mint,
+        inputMint: selectedFromAsset.mint,
+        outputMint: selectedToAsset.mint,
         amount: inputAmount,
       });
 
@@ -180,18 +180,18 @@ const JupiterTerminal = () => {
           <label className="block text-sm font-medium text-foreground">Sell</label>
           <div className="flex space-x-2">
             <input
-              type="text" // Changed to text
+              type="text"
               value={fromAmount}
               onChange={handleFromValueChange}
               className="flex-grow bg-input text-foreground rounded-md p-2"
-              placeholder="0" // Added placeholder
+              placeholder="0"
             />
             <select
-              value={fromAsset.name}
+              value={selectedFromAsset.name}
               onChange={handleFromAssetChange}
               className="bg-input text-foreground rounded-md p-2"
             >
-              {assets.map((asset) => (
+              {jupiterAssets.map((asset) => (
                 <option key={asset.mint} value={asset.name}>
                   {asset.name}
                 </option>
@@ -209,11 +209,11 @@ const JupiterTerminal = () => {
               readOnly
             />
             <select
-              value={toAsset.name}
+              value={selectedToAsset.name}
               onChange={handleToAssetChange}
               className="bg-input text-foreground rounded-md p-2"
             >
-              {assets.map((asset) => (
+              {jupiterAssets.map((asset) => (
                 <option key={asset.mint} value={asset.name}>
                   {asset.name}
                 </option>
@@ -224,7 +224,7 @@ const JupiterTerminal = () => {
         <div className="flex justify-center items-center">
           <Button
             onClick={handleSwap}
-            disabled={!connected || toAsset.mint === fromAsset.mint || isLoading || parseFloat(fromAmount) <= 0}
+            disabled={!connected || selectedToAsset.mint === selectedFromAsset.mint || isLoading || parseFloat(fromAmount) <= 0}
             className="w-full bg-[#77be44] hover:bg-[#69a93d] text-black font-bold py-2 px-4 rounded"
           >
             {isLoading ? 'Loading...' : 'Swap'}
