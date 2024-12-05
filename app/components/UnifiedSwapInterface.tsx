@@ -261,9 +261,9 @@ const getCachedPrice = (tokenAddress: string): number | null => {
   return null;
 };
 
-// Move this hook outside the component
+// First, update the type definition for the hook
 const useSolanaTokenBalance = (
-  token: TokenData | null,
+  token: (TokenData | SolanaToken | null),
   publicKey: PublicKey | null,
   connection: Connection | null
 ): number | null => {
@@ -274,6 +274,7 @@ const useSolanaTokenBalance = (
 
     const fetchBalance = async () => {
       try {
+        // Check if it's SOL
         if (SOL_MINT_ADDRESSES.includes(token.address)) {
           const solBalance = await connection.getBalance(publicKey);
           setBalance(solBalance / LAMPORTS_PER_SOL);
@@ -1952,7 +1953,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const ethereumSwapContainerRef = useRef<HTMLDivElement>(null);
   const solanaSwapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Move the hook call to the top level
+  // Then update the usage
   const solanaTokenBalance = useSolanaTokenBalance(
     activeChain === 'solana' ? sellToken : null,
     solanaWallet.publicKey || null,
