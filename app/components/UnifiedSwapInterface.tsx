@@ -30,7 +30,7 @@ import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import TokenChart, { TokenChartRef } from './TokenChart';
 import TokenSelector from '../token-list/TokenSelector';
-import { fetchTokenList, Token } from '../../lib/fetchTokenList';
+import { fetchTokenList, TokenInfo } from '../../lib/fetchTokenList';
 import { fetchTokenPrice } from '../utils/priceUtils';
 import { EXCHANGE_PROXY_ABI, EXCHANGE_PROXY_ADDRESSES, ERC20_ABI, MAINNET_TOKENS_BY_SYMBOL, ETH_ADDRESS, API_SWAP_PRICE_URL, FEE_RECIPIENT, AFFILIATE_FEE, NATIVE_SOL_MINT, WRAPPED_SOL_MINT, JUPITER_QUOTE_API_URL, JUPITER_SWAP_API_URL, SOLANA_DEFAULT_SLIPPAGE_BPS, SOL_MINT_ADDRESSES } from '@app/constants';
 import TokenSelectModal from '@/app/components/TokenSelectModal';
@@ -151,7 +151,7 @@ const itemVariants = {
   }
 };
 
-interface Token {
+interface TokenData {
   name: string;
   decimals: number;
   logoURI?: string;
@@ -278,7 +278,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   // State declarations must be at the top level of your component
   const [isLoadingTokens, setIsLoadingTokens] = useState<boolean>(false);
   const [showTokenSelect, setShowTokenSelect] = useState<boolean>(false);
-  const [tokens, setTokens] = useState<Token[]>([]);
+  const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [solanaTokens, setSolanaTokens] = useState<SolanaToken[]>([]);
 
   // Use the regular HTTP connection with custom fetch
@@ -307,8 +307,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const wsEndpoint = getWebSocketEndpoint();
 
   // State declarations
-  const [sellToken, setSellToken] = useState<Token | SolanaToken | null>(null);
-  const [buyToken, setBuyToken] = useState<Token | SolanaToken | null>(null);
+  const [sellToken, setSellToken] = useState<TokenData | SolanaToken | null>(null);
+  const [buyToken, setBuyToken] = useState<TokenData | SolanaToken | null>(null);
   const [sellAmount, setSellAmount] = useState<string>('');
   const [buyAmount, setBuyAmount] = useState<string>('0');
   const [isTokenSelectModalOpen, setIsTokenSelectModalOpen] = useState(false);
@@ -577,7 +577,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Add this function to check and set allowance
   const checkAndSetAllowance = async (
-    sellToken: Token,
+    sellToken: TokenData,
     sellAmount: bigint,
     address: `0x${string}`,
     walletClient: WalletClient,
@@ -768,7 +768,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   }, [pendingTxSignature]);
 
   // Add this helper function to properly format token addresses for Avalanche
-  const getProperTokenAddress = (token: Token | null, chainId: number) => {
+  const getProperTokenAddress = (token: TokenData | null, chainId: number) => {
     if (!token) return null;
     
     // Handle native AVAX
@@ -809,16 +809,16 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setBuyAmount(sellAmount);
   };
 
-  const [availableTokens, setAvailableTokens] = useState<Token[]>([]);
+  const [availableTokens, setAvailableTokens] = useState<TokenData[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedToken, setSelectedToken] = useState<Token | null>(null);
+  const [selectedToken, setSelectedToken] = useState<TokenData | null>(null);
 
   const fetchTokensForChain = useCallback(async () => {
     if (!chainId) return;
 
     try {
       console.log('Fetching tokens for chain ID:', chainId);
-      let tokens: Token[] = [];
+      let tokens: TokenData[] = [];
 
       switch (chainId) {
         case ARBITRUM_CHAIN_ID:
@@ -897,7 +897,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setSelectingTokenFor(null);
   };
 
-  const handleTokenSelect = (token: Token) => {
+  const handleTokenSelect = (token: TokenData) => {
     const selectedToken = {
       ...token,
       logoURI: token.logoURI || '',
@@ -914,7 +914,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     setSelectingTokenFor(null);
   };
 
-  const renderTokenSelector = (token: Token | null, onClick: () => void) => (
+  const renderTokenSelector = (token: TokenData | null, onClick: () => void) => (
     <button
       onClick={onClick}
       className={`
