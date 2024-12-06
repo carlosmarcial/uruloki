@@ -83,6 +83,7 @@ import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceU
 import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
+import { type RainbowKitAccount, type Wallet } from '@rainbow-me/rainbowkit';
 import { type Chain } from 'viem';
 
 // Update these color utility classes
