@@ -22,7 +22,7 @@ import {
 import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { ConnectButton as RainbowConnectButton } from '@rainbow-me/rainbowkit';
 import { formatUnits, parseUnits, encodeFunctionData, toHex, getContract, concat, numberToHex, size, Hex } from "viem";
 import { Address } from 'viem';
 import { MAINNET_TOKENS, MAX_ALLOWANCE, MAINNET_EXCHANGE_PROXY } from "../../src/constants";
@@ -83,6 +83,7 @@ import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceU
 import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
+import { type Chain } from 'viem';
 
 // Update these color utility classes
 const darkThemeClasses = {
@@ -1693,17 +1694,17 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       console.log('Using Permit2 address:', spenderAddress);
 
       // Check current allowance for Permit2
-      const currentAllowance = BigInt(await publicClient.readContract({
+      const allowance = await publicClient.readContract({
         address: sellToken.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'allowance',
         args: [address as `0x${string}`, spenderAddress as `0x${string}`],
-      }).toString());
+      });
 
-      console.log('Current Permit2 allowance:', currentAllowance.toString());
+      console.log('Current Permit2 allowance:', allowance?.toString());
       console.log('Required amount:', sellAmountBigInt.toString());
 
-      if (!currentAllowance || sellAmountBigInt > currentAllowance) {
+      if (!allowance || sellAmountBigInt > (allowance as bigint)) {
         console.log('Approval needed, preparing transaction...');
         
         const { request } = await publicClient.simulateContract({
@@ -2661,7 +2662,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     <div ref={ethereumSwapContainerRef} className={`flex-grow ${darkThemeClasses.primary} rounded-lg p-4 flex flex-col h-full`}>
       {/* Top section with wallet connect only */}
       <div>
-        <ConnectButton.Custom>
+        <RainbowConnectButton.Custom>
           {({
             account,
             chain,
@@ -2669,6 +2670,13 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             openConnectModal,
             mounted,
             wallet,
+          }: {
+            account?: RainbowKitAccount;
+            chain?: Chain;
+            openAccountModal?: () => void;
+            openConnectModal?: () => void;
+            mounted?: boolean;
+            wallet?: Wallet;
           }) => {
             const ready = mounted;
             const connected = ready && account && chain;
@@ -2699,7 +2707,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               </button>
             );
           }}
-        </ConnectButton.Custom>
+        </RainbowConnectButton.Custom>
       </div>
 
       {/* Rest of the interface remains the same */}
