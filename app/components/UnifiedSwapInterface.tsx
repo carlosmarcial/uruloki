@@ -84,6 +84,7 @@ import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
 import type { Chain } from 'viem';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 // Update these color utility classes
 const darkThemeClasses = {
@@ -2662,7 +2663,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     <div ref={ethereumSwapContainerRef} className={`flex-grow ${darkThemeClasses.primary} rounded-lg p-4 flex flex-col h-full`}>
       {/* Top section with wallet connect only */}
       <div>
-        <RainbowConnectButton.Custom>
+        <ConnectButton.Custom>
           {({
             account,
             chain,
@@ -2707,7 +2708,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               </button>
             );
           }}
-        </RainbowConnectButton.Custom>
+        </ConnectButton.Custom>
       </div>
 
       {/* Rest of the interface remains the same */}
