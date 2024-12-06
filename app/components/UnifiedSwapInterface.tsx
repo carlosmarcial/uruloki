@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, ArrowUpDown, Search, X, Wallet, ArrowUp } from "lucide-react";
+import { ChevronDown, ArrowUpDown, Search, X, ArrowUp } from "lucide-react";
 import Image from "next/image";
 import { 
   useAccount, 
