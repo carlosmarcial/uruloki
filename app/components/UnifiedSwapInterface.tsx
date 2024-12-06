@@ -84,7 +84,6 @@ import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
 import type { Chain } from 'viem';
 import { ConnectButton, type ConnectButtonProps } from '@rainbow-me/rainbowkit';
-import { useConnectModal, useAccountModal } from '@rainbow-me/rainbowkit';
 
 
 // Update these color utility classes
@@ -2666,7 +2665,10 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
 
   // Add this before the return statement
   const renderEthereumSwapInterface = () => (
-    <div ref={ethereumSwapContainerRef} className={`flex-grow ${darkThemeClasses.primary} rounded-lg p-4 flex flex-col h-full`}>
+    <div 
+      ref={ethereumSwapContainerRef} 
+      className={`flex-grow ${darkThemeClasses.primary} rounded-lg p-4 flex flex-col h-full`}
+    >
       {/* Top section with wallet connect only */}
       <div>
         <CustomConnectButton />
@@ -2684,12 +2686,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
               type="text"
               value={formatDisplayAmount(sellAmount)}
               onChange={(e) => {
-                // Remove commas from the input
                 const rawValue = e.target.value.replace(/,/g, '');
-                
-                // Allow empty string, numbers, and decimals
                 if (rawValue === '' || /^\d*\.?\d*$/.test(rawValue)) {
-                  // Prevent more than one decimal point
                   const decimalPoints = (rawValue.match(/\./g) || []).length;
                   if (decimalPoints <= 1) {
                     setSellAmount(rawValue);
@@ -3083,37 +3081,8 @@ type Wallet = {
 };
 
 const CustomConnectButton = () => {
-  const { openConnectModal } = useConnectModal();
-  const { openAccountModal } = useAccountModal();
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-  
-  const connected = isConnected && address;
-
   return (
-    <button
-      onClick={connected ? openAccountModal : openConnectModal}
-      className={`
-        py-3 px-6 rounded-sm font-bold text-base min-w-[152px]
-        ${connected 
-          ? 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
-          : 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
-        }
-        flex items-center justify-center gap-2 whitespace-nowrap
-      `}
-    >
-      {connected && (window as any).ethereum?.isMetaMask && (
-        <Image 
-          src="/metamask-icon.png"
-          alt="MetaMask"
-          width={16}
-          height={16}
-          className="rounded-full"
-          priority
-        />
-      )}
-      <span>{connected ? `${address?.substring(0, 6)}...${address?.substring(38)}` : 'Select Wallet'}</span>
-    </button>
+    <ConnectButton />
   );
 };
 
