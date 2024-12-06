@@ -1,5 +1,5 @@
-import { getDefaultWallets } from '@rainbow-me/rainbowkit';
-import { http, createConfig } from 'wagmi';
+import { getDefaultConfig } from '@rainbow-me/rainbowkit';
+import { http } from 'wagmi';
 import { 
   mainnet, 
   polygon, 
@@ -14,7 +14,7 @@ export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || 'a1a360949d
 
 export const metadata = {
   name: "Uruloki",
-  description: "My App description",
+  description: "On-chain DEX aggregator for Ethereum and Solana",
   url: "https://uruloki.app",
   icons: ["public/logo.svg"]
 };
@@ -27,16 +27,10 @@ export const networks = [
   base
 ];
 
-// Remove configureChains as it's no longer needed in the latest Wagmi version
-
-const { wallets } = getDefaultWallets({
+// Create the Wagmi config using getDefaultConfig
+export const wagmiConfig = getDefaultConfig({
   appName: metadata.name,
   projectId,
-  chains: networks,
-});
-
-// Create the Wagmi config
-export const wagmiConfig = createConfig({
   chains: networks,
   transports: {
     [mainnet.id]: http(),
@@ -45,20 +39,25 @@ export const wagmiConfig = createConfig({
     [arbitrum.id]: http(),
     [base.id]: http(),
   },
-  connectors: wallets,
+  ssr: true
 });
 
-// Add type declaration merging for global inference
-declare module 'wagmi' {
-  interface Register {
-    config: typeof wagmiConfig
-  }
-}
-
-// Create wagmiAdapter
+// Create wagmiAdapter with correct CAIP format for network IDs
 const wagmiAdapter = new WagmiAdapter({
   ssr: true,
-  networks,
+  networks: networks.map(network => ({
+    id: `eip155:${network.id}`,  // Format ID according to CAIP
+    name: network.name,
+    chainId: network.id.toString(),
+    chainNamespace: 'evm',
+    rpcUrl: network.rpcUrls.default.http[0],
+    explorerUrl: network.blockExplorers?.default?.url || '',
+    currency: {
+      name: network.nativeCurrency.name,
+      symbol: network.nativeCurrency.symbol,
+      decimals: network.nativeCurrency.decimals
+    }
+  })),
   projectId
 });
 
