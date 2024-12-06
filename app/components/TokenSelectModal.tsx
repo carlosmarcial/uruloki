@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X } from 'lucide-react';
 import TokenImage from './TokenImage';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TokenData, SolanaToken } from '@/types/token';
+import { TokenData, SolanaToken } from '@/app/types/token';
 
 interface RecentToken extends TokenData {
   timestamp: number;
