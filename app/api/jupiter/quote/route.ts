@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import { JUPITER_QUOTE_API_URL } from '@/app/constants';
 
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
+  const searchParams = request.nextUrl.searchParams;
   const jupiterUrl = `${JUPITER_QUOTE_API_URL}?${searchParams.toString()}`;
 
   try {

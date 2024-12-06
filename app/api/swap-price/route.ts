@@ -7,15 +7,18 @@ const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 const ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 export async function GET(request: NextRequest) {
   try {
-    const params = new URLSearchParams(request.nextUrl.search);
-    const chainId = Number(params.get('chainId'));
-    const sellToken = params.get('sellToken');
-    const buyToken = params.get('buyToken');
-    const sellAmount = params.get('sellAmount');
-    const taker = params.get('taker');
-    const slippageBps = params.get('slippageBps') || '50'; // Default to 0.5%
+    const searchParams = request.nextUrl.searchParams;
+    const chainId = Number(searchParams.get('chainId'));
+    const sellToken = searchParams.get('sellToken');
+    const buyToken = searchParams.get('buyToken');
+    const sellAmount = searchParams.get('sellAmount');
+    const taker = searchParams.get('taker');
+    const slippageBps = searchParams.get('slippageBps') || '50'; // Default to 0.5%
 
     console.log('Received parameters:', {
       chainId,

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function GET(request: NextRequest) {
-  const { pathname, search } = request.nextUrl;
+  const { pathname, searchParams } = request.nextUrl;
   const jupiterPath = pathname.replace('/api/jupiter', '');
-  const jupiterUrl = `https://quote-api.jup.ag/v6${jupiterPath}${search}`;
+  const jupiterUrl = `https://quote-api.jup.ag/v6${jupiterPath}?${searchParams.toString()}`;
 
   try {
     const response = await fetch(jupiterUrl, {
