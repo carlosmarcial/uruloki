@@ -2009,6 +2009,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         setEthTransactionStatus('error');
       }
 
+      // When calling estimateGasForTransaction, pass the publicClient
+      const gasEstimate = await estimateGasForTransaction(txParams, publicClient);
+      setEstimatedGas(gasEstimate);
+      setGasPrice(txParams.gasPrice);
+
     } catch (error) {
       console.error('Swap error:', error);
       setEthTransactionStatus('error');
@@ -3025,13 +3030,16 @@ const formatBalanceDisplay = (balance: number | null, symbol: string) => {
   return `Balance: ${balance} ${symbol}`;
 };
 
-const estimateGasForTransaction = async (txParams: any) => {
-  if (!publicClient) {
+const estimateGasForTransaction = async (
+  txParams: any, 
+  client: PublicClient
+) => {
+  if (!client) {
     throw new Error('Public client not available');
   }
 
   try {
-    const gasEstimate = await publicClient.estimateGas(txParams);
+    const gasEstimate = await client.estimateGas(txParams);
     return gasEstimate;
   } catch (error) {
     console.error('Error estimating gas:', error);
