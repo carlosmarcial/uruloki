@@ -83,8 +83,7 @@ import { fetchJupiterPrice, getCachedJupiterPrice } from '../utils/jupiterPriceU
 import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
-import { type RainbowKitAccount, type Wallet } from '@rainbow-me/rainbowkit';
-import { type Chain } from 'viem';
+import type { Chain } from 'viem';
 
 // Update these color utility classes
 const darkThemeClasses = {
@@ -3070,6 +3069,56 @@ const isPublicClientAvailable = (client: any): client is PublicClient => {
   return client !== null && client !== undefined && typeof client.readContract === 'function';
 };
 
+type RainbowKitAccount = {
+  address: string;
+  balanceDecimals?: number;
+  balanceFormatted?: string;
+  balanceSymbol?: string;
+  displayBalance?: string;
+  displayName: string;
+  ensAvatar?: string;
+  ensName?: string;
+  hasPendingTransactions: boolean;
+};
+
+type Wallet = {
+  connector: any;
+  id: string;
+  name: string;
+  shortName?: string;
+  iconUrl?: string | (() => Promise<string>);
+  iconBackground?: string;
+  installed?: boolean;
+  downloadUrls?: {
+    android?: string;
+    ios?: string;
+    mobile?: string;
+    qrCode?: string;
+    chrome?: string;
+    firefox?: string;
+    edge?: string;
+    safari?: string;
+    opera?: string;
+    browserExtension?: string;
+  };
+  createConnector: () => {
+    connector: any;
+    mobile?: {
+      getUri?: () => Promise<string>;
+    };
+    qrCode?: {
+      getUri: () => Promise<string>;
+      instructions?: {
+        learnMoreUrl: string;
+        steps: Array<{
+          description: string;
+          step: string;
+          title: string;
+        }>;
+      };
+    };
+  };
+};
 
 
 
