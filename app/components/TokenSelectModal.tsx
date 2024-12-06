@@ -2,26 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X } from 'lucide-react';
 import TokenImage from './TokenImage';
 import { motion, AnimatePresence } from 'framer-motion';
+import { TokenData, SolanaToken } from '@/app/types/token';
 
-interface TokenData {
-  address: string;
-  name: string;
-  symbol: string;
-  decimals: number;
-  logoURI?: string;
-}
-
-interface SolanaToken {
-  address: string;
-  name: string;
-  symbol: string;
-  decimals: number;
-  logoURI: string;
-  tags?: string[];
-  daily_volume?: number;
-}
-
-// Add interface for recent token
 interface RecentToken extends TokenData {
   timestamp: number;
 }

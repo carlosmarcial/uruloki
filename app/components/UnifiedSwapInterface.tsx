@@ -84,6 +84,7 @@ import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
 import type { Chain } from 'viem';
 import { ConnectButton, type ConnectButtonProps } from '@rainbow-me/rainbowkit';
+import { TokenData, SolanaToken } from '@/app/types/token';
 
 
 // Then update the TokenData interface
@@ -1096,10 +1097,11 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   };
 
   const handleTokenSelect = (token: TokenData) => {
-    const selectedToken = {
+    const selectedToken: TokenData = {
       ...token,
       logoURI: token.logoURI || '',
       _timestamp: Date.now(),
+      chainId: activeChain === 'solana' ? 0 : chainId // Ensure chainId is always set
     };
 
     if (selectingTokenFor === 'sell') {
@@ -2874,7 +2876,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <TokenSelectModal
             tokens={activeChain === 'solana' ? solanaTokens : tokens}
             onClose={() => setIsTokenSelectModalOpen(false)}
-            onSelect={(token: TokenData) => handleTokenSelect(token)}
+            onSelect={handleTokenSelect}
             chainId={activeChain === 'solana' ? 'solana' : chainId}
             activeChain={activeChain}
             isLoading={isLoadingTokens}
@@ -2886,7 +2888,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         <TokenSelectModal
           tokens={tokens}
           onClose={() => setShowTokenSelect(false)}
-          onSelect={(token: TokenData) => handleTokenSelect(token)}
+          onSelect={handleTokenSelect}
           chainId={chainId}
           activeChain={activeChain}
           isLoading={isLoadingTokens}
