@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X } from 'lucide-react';
 import TokenImage from './TokenImage';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TokenData, SolanaToken } from '@/app/types/token';
+import { TokenData, SolanaToken } from '@/types/token';
 
 interface RecentToken extends TokenData {
   timestamp: number;
@@ -145,6 +145,26 @@ const TokenSelectModal: React.FC<TokenSelectModalProps> = ({
     }, 300); // Match this with animation duration
   };
 
+  // Add a transform function
+  const transformToTokenData = (token: TokenData | SolanaToken): TokenData => {
+    if ('chainId' in token) {
+      return token as TokenData;
+    }
+    // Transform SolanaToken to TokenData
+    return {
+      ...token,
+      chainId: 0, // Use 0 for Solana tokens
+      _timestamp: Date.now(),
+      extensions: {}
+    };
+  };
+
+  // Update the onClick handler
+  const handleTokenClick = (token: TokenData | SolanaToken) => {
+    const tokenData = transformToTokenData(token);
+    handleTokenSelect(tokenData);
+  };
+
   return (
     <AnimatePresence mode="wait">
       <motion.div 
@@ -228,7 +248,7 @@ const TokenSelectModal: React.FC<TokenSelectModalProps> = ({
               displayedTokens.map((token) => (
                 <div
                   key={`${token.address}-${chainId}`}
-                  onClick={() => handleTokenSelect(token)}
+                  onClick={() => handleTokenClick(token)}
                   className="flex items-center p-3 hover:bg-[#2c2d33] cursor-pointer rounded-xl"
                 >
                   <div className="w-8 h-8 mr-3 rounded-full overflow-hidden">

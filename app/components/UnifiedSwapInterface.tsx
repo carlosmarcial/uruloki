@@ -84,7 +84,7 @@ import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
 import type { Chain } from 'viem';
 import { ConnectButton, type ConnectButtonProps } from '@rainbow-me/rainbowkit';
-import { TokenData, SolanaToken } from '@/app/types/token';
+// import { TokenData, SolanaToken } from '@/app/types/token';
 
 
 // Then update the TokenData interface
