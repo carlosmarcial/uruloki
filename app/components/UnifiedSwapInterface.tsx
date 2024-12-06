@@ -28,7 +28,6 @@ import { MAINNET_TOKENS, MAX_ALLOWANCE, MAINNET_EXCHANGE_PROXY } from "../../src
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import TokenChart, { TokenChartRef } from './TokenChart';
-import TokenSelector from '../token-list/TokenSelector';
 import { fetchTokenList, TokenInfo } from '../../lib/fetchTokenList';
 import { fetchTokenPrice } from '../utils/priceUtils';
 import { EXCHANGE_PROXY_ABI, EXCHANGE_PROXY_ADDRESSES, ERC20_ABI, MAINNET_TOKENS_BY_SYMBOL, ETH_ADDRESS, API_SWAP_PRICE_URL, FEE_RECIPIENT, AFFILIATE_FEE, NATIVE_SOL_MINT, WRAPPED_SOL_MINT, JUPITER_QUOTE_API_URL, JUPITER_SWAP_API_URL, SOLANA_DEFAULT_SLIPPAGE_BPS, SOL_MINT_ADDRESSES } from '@app/constants';
