@@ -1,4 +1,4 @@
-import { Connection, PublicKey, Transaction, TransactionSignature, Commitment, VersionedTransaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, TransactionSignature, Commitment, VersionedTransaction, BlockheightBasedTransactionConfirmationStrategy } from '@solana/web3.js';
 
 // Create backup connection
 const backupConnection = new Connection(process.env.NEXT_PUBLIC_BACKUP_RPC_URL as string);
@@ -69,6 +69,8 @@ export const sendAndConfirmTransactionWithRetry = async (
       // Try primary dRPC first
       try {
         const rawTransaction = signedTransaction.serialize();
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+        
         const signature = await connection.sendRawTransaction(rawTransaction, {
           skipPreflight: true,
           maxRetries: 2,
@@ -76,10 +78,16 @@ export const sendAndConfirmTransactionWithRetry = async (
         
         console.log(`Transaction sent with signature: ${signature}`);
 
-        const confirmation = await connection.confirmTransaction({
-          signature,
-          blockhash: signedTransaction.message.recentBlockhash,
-        }, commitment);
+        const confirmationStrategy: BlockheightBasedTransactionConfirmationStrategy = {
+          blockhash,
+          lastValidBlockHeight,
+          signature
+        };
+
+        const confirmation = await connection.confirmTransaction(
+          confirmationStrategy,
+          commitment
+        );
 
         if (confirmation.value.err) {
           throw new Error(`Transaction failed: ${confirmation.value.err.toString()}`);
@@ -91,15 +99,23 @@ export const sendAndConfirmTransactionWithRetry = async (
         console.warn('Primary dRPC failed, trying backup:', primaryError);
         
         // Fall back to backup RPC
+        const { blockhash, lastValidBlockHeight } = await backupConnection.getLatestBlockhash();
+        
         const backupSignature = await backupConnection.sendRawTransaction(
           signedTransaction.serialize(),
           { skipPreflight: true }
         );
 
-        const backupConfirmation = await backupConnection.confirmTransaction({
-          signature: backupSignature,
-          blockhash: signedTransaction.message.recentBlockhash,
-        });
+        const backupConfirmationStrategy: BlockheightBasedTransactionConfirmationStrategy = {
+          blockhash,
+          lastValidBlockHeight,
+          signature: backupSignature
+        };
+
+        const backupConfirmation = await backupConnection.confirmTransaction(
+          backupConfirmationStrategy,
+          commitment
+        );
 
         if (backupConfirmation.value.err) {
           throw new Error(`Backup transaction failed: ${backupConfirmation.value.err.toString()}`);

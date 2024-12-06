@@ -1,11 +1,11 @@
 import { formatUnits, parseUnits } from 'viem';
-import { Token } from '@/app/types';
+import { TokenData } from '@/app/types/token';
 
 export const calculatePriceImpact = (
   sellAmount: string,
   buyAmount: string,
-  sellToken: Token,
-  buyToken: Token,
+  sellToken: TokenData,
+  buyToken: TokenData,
   sellPrice: number,
   buyPrice: number
 ): number => {

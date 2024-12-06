@@ -1,6 +1,8 @@
-import { ZEROX_API_URLS, ZEROX_API_VERSIONS } from '../constants';
+import { ZEROX_API_URLS, ZEROX_API_VERSIONS, FEE_RECIPIENT } from '../constants';
 import axios from 'axios';
 import { parseUnits } from 'ethers';
+import { Connection, VersionedTransaction } from '@solana/web3.js';
+import { WalletContextState } from '@solana/wallet-adapter-react';
 
 export const fetchPrice = async (
   chainId: number,
@@ -115,7 +117,17 @@ export const sendTransactionWithRetry = async (
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
       transaction.message.recentBlockhash = blockhash;
 
+      // Add null check for signTransaction
+      if (!wallet.signTransaction) {
+        throw new Error('Wallet does not support transaction signing');
+      }
+
+      // Sign the transaction
       const signedTransaction = await wallet.signTransaction(transaction);
+
+      // Convert the serialized transaction to base64 string properly
+      const serializedTransaction = Buffer.from(signedTransaction.serialize());
+      const base64Transaction = serializedTransaction.toString('base64');
 
       // Submit via Jupiter worker
       const response = await fetch('https://worker.jup.ag/send-transaction', {
@@ -124,7 +136,7 @@ export const sendTransactionWithRetry = async (
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          transaction: signedTransaction.serialize().toString('base64'),
+          transaction: base64Transaction,
           options: {
             skipPreflight: true,
             maxRetries: 2,

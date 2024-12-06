@@ -7,7 +7,7 @@ import { WagmiProvider } from 'wagmi';
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import ModelPreloader from '@app/components/ModelPreloader';
 import SolanaProvider from './components/SolanaProvider';
-import { wagmiConfig } from './wagmi';
+import { wagmiConfig } from './wagmi.js';
 
 const queryClient = new QueryClient();
 

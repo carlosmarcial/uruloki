@@ -14,7 +14,7 @@ import { http } from 'viem';
 import WebGLBackground from './components/WebGLBackground';
 import { Providers } from './providers';
 import Header from './components/Header';
-import { WagmiProvider } from 'wagmi';
+import { wagmiConfig } from './wagmi.js';
 import { Metadata } from 'next';
 
 const inter = Inter({ subsets: ["latin"] });
