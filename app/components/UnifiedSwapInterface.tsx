@@ -86,6 +86,21 @@ import type { Chain } from 'viem';
 import { ConnectButton, type ConnectButtonProps } from '@rainbow-me/rainbowkit';
 
 
+// Then update the TokenData interface
+interface TokenData {
+  address: `0x${string}` | string; // Allow both Ethereum and Solana addresses
+  chainId: number; // Make it required to match TokenInfo
+  name: string;
+  symbol: string;
+  decimals: number;
+  logoURI: string;
+  _timestamp?: number;
+  tags?: string[];
+  extensions?: {
+    [key: string]: string | number | boolean | null;
+  };
+}
+
 // Update these color utility classes
 const darkThemeClasses = {
   primary: 'bg-gray-900', // Match the token chart background
@@ -152,16 +167,6 @@ const itemVariants = {
     }
   }
 };
-
-interface TokenData extends TokenInfo {
-  address: `0x${string}` | string; // Allow both Ethereum and Solana addresses
-  chainId?: number;
-  _timestamp?: number;
-  logoURI: string;
-  symbol: string;
-  decimals: number;
-  name: string;
-}
 
 interface SolanaToken {
   address: string;
@@ -1042,19 +1047,27 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           console.log('Fetching Solana tokens...');
           const solanaTokensList = await fetchSolanaTokens();
           console.log('Fetched Solana tokens:', solanaTokensList.length);
-          setTokens(solanaTokensList); // Solana tokens don't need transformation
+          
+          // Transform Solana tokens to match TokenData interface
+          const transformedSolanaTokens: TokenData[] = solanaTokensList.map(token => ({
+            ...token,
+            chainId: 0, // Use 0 or another specific number for Solana
+            logoURI: token.logoURI || '',
+            _timestamp: Date.now()
+          }));
+          
+          setTokens(transformedSolanaTokens);
         } else {
           console.log('Fetching EVM tokens...');
           const fetchedTokens = await fetchTokenList(chainId);
           console.log('Fetched EVM tokens:', fetchedTokens.length);
           
-          // Transform the tokens to ensure proper typing
           const transformedTokens: TokenData[] = fetchedTokens.map(token => ({
             ...token,
             address: token.address.toLowerCase().startsWith('0x') 
               ? (token.address as `0x${string}`) 
               : (`0x${token.address}` as `0x${string}`),
-            chainId,
+            chainId: chainId,
             logoURI: token.logoURI || '',
             _timestamp: Date.now()
           }));
