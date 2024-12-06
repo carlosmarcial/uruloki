@@ -84,6 +84,7 @@ import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
 import type { Chain } from 'viem';
 import { ConnectButton, type ConnectButtonProps } from '@rainbow-me/rainbowkit';
+import { useConnectModal, useAccountModal } from '@rainbow-me/rainbowkit';
 
 
 // Update these color utility classes
@@ -154,8 +155,13 @@ const itemVariants = {
 };
 
 interface TokenData extends TokenInfo {
-  address: `0x${string}`; // Override the address type to be more specific
+  address: `0x${string}` | string; // Allow both Ethereum and Solana addresses
+  chainId?: number;
   _timestamp?: number;
+  logoURI: string;
+  symbol: string;
+  decimals: number;
+  name: string;
 }
 
 interface SolanaToken {
@@ -1081,7 +1087,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     const selectedToken = {
       ...token,
       logoURI: token.logoURI || '',
-      _timestamp: Date.now(), // Add timestamp for forcing re-render
+      _timestamp: Date.now(),
     };
 
     if (selectingTokenFor === 'sell') {
@@ -2857,7 +2863,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <TokenSelectModal
             tokens={activeChain === 'solana' ? solanaTokens : tokens}
             onClose={() => setIsTokenSelectModalOpen(false)}
-            onSelect={handleTokenSelect}
+            onSelect={(token: TokenData) => handleTokenSelect(token)}
             chainId={activeChain === 'solana' ? 'solana' : chainId}
             activeChain={activeChain}
             isLoading={isLoadingTokens}
@@ -2869,7 +2875,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
         <TokenSelectModal
           tokens={tokens}
           onClose={() => setShowTokenSelect(false)}
-          onSelect={handleTokenSelect}
+          onSelect={(token: TokenData) => handleTokenSelect(token)}
           chainId={chainId}
           activeChain={activeChain}
           isLoading={isLoadingTokens}
@@ -3007,12 +3013,12 @@ const formatBalanceDisplay = (balance: number | null, symbol: string) => {
 };
 
 const estimateGasForTransaction = async (txParams: any) => {
-  if (!estimateGasAsync) {
-    throw new Error('Gas estimation not available');
+  if (!publicClient) {
+    throw new Error('Public client not available');
   }
 
   try {
-    const gasEstimate = await estimateGasAsync(txParams);
+    const gasEstimate = await publicClient.estimateGas(txParams);
     return gasEstimate;
   } catch (error) {
     console.error('Error estimating gas:', error);
@@ -3077,50 +3083,37 @@ type Wallet = {
 };
 
 const CustomConnectButton = () => {
+  const { openConnectModal } = useConnectModal();
+  const { openAccountModal } = useAccountModal();
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  
+  const connected = isConnected && address;
 
   return (
-    <ConnectButton.Custom>
-      {({
-        account,
-        chain,
-        openAccountModal,
-        openConnectModal,
-        mounted,
-      }) => {
-        const ready = mounted;
-        const connected = ready && account && chain;
-
-        return (
-          <button
-            onClick={connected ? openAccountModal : openConnectModal}
-            className={`
-              py-3 px-6 rounded-sm font-bold text-base min-w-[152px]
-              ${connected 
-                ? 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
-                : 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
-              }
-              flex items-center justify-center gap-2 whitespace-nowrap
-            `}
-          >
-            {connected && (window as any).ethereum?.isMetaMask && (
-              <Image 
-                src="/metamask-icon.png"
-                alt="MetaMask"
-                width={16}
-                height={16}
-                className="rounded-full"
-                priority
-              />
-            )}
-            <span>
-              {connected ? `${account.address.substring(0, 6)}...${account.address.substring(38)}` : 'Select Wallet'}
-            </span>
-          </button>
-        );
-      }}
-    </ConnectButton.Custom>
+    <button
+      onClick={connected ? openAccountModal : openConnectModal}
+      className={`
+        py-3 px-6 rounded-sm font-bold text-base min-w-[152px]
+        ${connected 
+          ? 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
+          : 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
+        }
+        flex items-center justify-center gap-2 whitespace-nowrap
+      `}
+    >
+      {connected && (window as any).ethereum?.isMetaMask && (
+        <Image 
+          src="/metamask-icon.png"
+          alt="MetaMask"
+          width={16}
+          height={16}
+          className="rounded-full"
+          priority
+        />
+      )}
+      <span>{connected ? `${address?.substring(0, 6)}...${address?.substring(38)}` : 'Select Wallet'}</span>
+    </button>
   );
 };
 

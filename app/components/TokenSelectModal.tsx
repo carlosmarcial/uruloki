@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import TokenImage from './TokenImage';
 import { motion, AnimatePresence } from 'framer-motion';
 
-interface Token {
+interface TokenData {
   address: string;
   name: string;
   symbol: string;
@@ -22,14 +22,14 @@ interface SolanaToken {
 }
 
 // Add interface for recent token
-interface RecentToken extends Token {
+interface RecentToken extends TokenData {
   timestamp: number;
 }
 
 interface TokenSelectModalProps {
-  tokens: Token[];
+  tokens: TokenData[];
   onClose: () => void;
-  onSelect: (token: Token) => void;
+  onSelect: (token: TokenData) => void;
   chainId: number | 'solana';
   activeChain: 'ethereum' | 'solana';
   isLoading: boolean;
@@ -46,8 +46,8 @@ const TokenSelectModal: React.FC<TokenSelectModalProps> = ({
   setShowTokenSelect
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [displayedTokens, setDisplayedTokens] = useState<(Token | SolanaToken)[]>([]);
-  const [filteredTokens, setFilteredTokens] = useState<(Token | SolanaToken)[]>([]);
+  const [displayedTokens, setDisplayedTokens] = useState<(TokenData | SolanaToken)[]>([]);
+  const [filteredTokens, setFilteredTokens] = useState<(TokenData | SolanaToken)[]>([]);
   const [recentTokens, setRecentTokens] = useState<RecentToken[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -79,7 +79,7 @@ const TokenSelectModal: React.FC<TokenSelectModalProps> = ({
   }, [activeChain, chainId]);
 
   // Save token to recent tokens
-  const saveToRecentTokens = (token: Token) => {
+  const saveToRecentTokens = (token: TokenData) => {
     const storageKey = `recentTokens-${activeChain}-${chainId}`;
     const recentToken: RecentToken = {
       ...token,
@@ -96,7 +96,7 @@ const TokenSelectModal: React.FC<TokenSelectModalProps> = ({
   };
 
   // Modified onSelect handler
-  const handleTokenSelect = (token: Token) => {
+  const handleTokenSelect = (token: TokenData) => {
     saveToRecentTokens(token);
     onSelect(token);
   };
