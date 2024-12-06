@@ -5,9 +5,10 @@ import axios from 'axios';
 const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_DURATION = 60000; // 1 minute
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const searchParams = new URLSearchParams(url.search);
+  const searchParams = request.nextUrl.searchParams;
 
   try {
     const endpoint = searchParams.get('endpoint');

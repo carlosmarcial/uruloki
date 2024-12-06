@@ -11,9 +11,11 @@ const NETWORK_MAPPING = {
   'solana': 'solana' // Solana
 };
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = request.nextUrl;
     const network = searchParams.get('network');
     const tokenAddress = searchParams.get('token_address')?.toLowerCase();
     const chainId = searchParams.get('chainId');

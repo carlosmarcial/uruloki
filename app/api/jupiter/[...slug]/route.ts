@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
-  const { pathname, search } = new URL(request.url);
+  const { pathname, search } = request.nextUrl;
   const jupiterPath = pathname.replace('/api/jupiter', '');
   const jupiterUrl = `https://quote-api.jup.ag/v6${jupiterPath}${search}`;
 
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { pathname } = new URL(request.url);
+  const { pathname } = request.nextUrl;
   const jupiterPath = pathname.replace('/api/jupiter', '');
   const jupiterUrl = `https://quote-api.jup.ag/v6${jupiterPath}`;
 

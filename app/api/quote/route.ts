@@ -6,9 +6,11 @@ import { PERMIT2_ADDRESS } from '@/app/constants';
 const FEE_RECIPIENT = '0x765d4129bbe4C9b134f307E2B10c6CF75Fe0e2f6';
 const ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = request.nextUrl;
     const sellToken = searchParams.get('sellToken');
     const buyToken = searchParams.get('buyToken');
     const sellAmount = searchParams.get('sellAmount');
