@@ -65,7 +65,7 @@ export const fetchTokenPrice = async (tokenAddress: string, chain: string) => {
         {
           retries: 2,
           minTimeout: 2000,
-          factor: 2
+          maxTimeout: 10000
         }
       );
 
