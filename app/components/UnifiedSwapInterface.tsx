@@ -17,7 +17,7 @@ import {
   useSignTypedData, 
   useSendTransaction, 
   usePublicClient, 
-  useWalletClient,
+  useWalletClient
 } from 'wagmi';
 import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -2663,45 +2663,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     <div ref={ethereumSwapContainerRef} className={`flex-grow ${darkThemeClasses.primary} rounded-lg p-4 flex flex-col h-full`}>
       {/* Top section with wallet connect only */}
       <div>
-        <ConnectButton.Custom>
-          {({
-            account,
-            chain,
-            openAccountModal,
-            openConnectModal,
-            mounted,
-            wallet,
-          }: ConnectButtonProps) => {
-            const ready = mounted;
-            const connected = ready && account && chain;
-
-            return (
-              <button
-                onClick={connected ? openAccountModal : openConnectModal}
-                className={`
-                  py-3 px-6 rounded-sm font-bold text-base min-w-[152px]
-                  ${connected 
-                    ? 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
-                    : 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
-                  }
-                  flex items-center justify-center gap-2 whitespace-nowrap
-                `}
-              >
-                {connected && wallet?.name === 'MetaMask' && (
-                  <Image 
-                    src="/metamask-icon.png"
-                    alt="MetaMask"
-                    width={16}
-                    height={16}
-                    className="rounded-full"
-                    priority
-                  />
-                )}
-                <span>{connected ? account.displayName : 'Select Wallet'}</span>
-              </button>
-            );
-          }}
-        </ConnectButton.Custom>
+        <CustomConnectButton />
       </div>
 
       {/* Rest of the interface remains the same */}
@@ -3112,6 +3074,54 @@ type Wallet = {
       };
     };
   };
+};
+
+const CustomConnectButton = () => {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+
+  return (
+    <ConnectButton.Custom>
+      {({
+        account,
+        chain,
+        openAccountModal,
+        openConnectModal,
+        mounted,
+      }) => {
+        const ready = mounted;
+        const connected = ready && account && chain;
+
+        return (
+          <button
+            onClick={connected ? openAccountModal : openConnectModal}
+            className={`
+              py-3 px-6 rounded-sm font-bold text-base min-w-[152px]
+              ${connected 
+                ? 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
+                : 'bg-[#77be44] text-white hover:bg-[#69aa3b] transition-colors'
+              }
+              flex items-center justify-center gap-2 whitespace-nowrap
+            `}
+          >
+            {connected && (window as any).ethereum?.isMetaMask && (
+              <Image 
+                src="/metamask-icon.png"
+                alt="MetaMask"
+                width={16}
+                height={16}
+                className="rounded-full"
+                priority
+              />
+            )}
+            <span>
+              {connected ? `${account.address.substring(0, 6)}...${account.address.substring(38)}` : 'Select Wallet'}
+            </span>
+          </button>
+        );
+      }}
+    </ConnectButton.Custom>
+  );
 };
 
 
