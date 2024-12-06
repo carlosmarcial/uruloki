@@ -22,7 +22,6 @@ import {
 import { useSimulateContract } from 'wagmi';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { ConnectButton as RainbowConnectButton } from '@rainbow-me/rainbowkit';
 import { formatUnits, parseUnits, encodeFunctionData, toHex, getContract, concat, numberToHex, size, Hex } from "viem";
 import { Address } from 'viem';
 import { MAINNET_TOKENS, MAX_ALLOWANCE, MAINNET_EXCHANGE_PROXY } from "../../src/constants";
@@ -84,7 +83,8 @@ import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
 import type { Chain } from 'viem';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { ConnectButton, type ConnectButtonProps } from '@rainbow-me/rainbowkit';
+
 
 // Update these color utility classes
 const darkThemeClasses = {
@@ -2671,14 +2671,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             openConnectModal,
             mounted,
             wallet,
-          }: {
-            account?: RainbowKitAccount;
-            chain?: Chain;
-            openAccountModal?: () => void;
-            openConnectModal?: () => void;
-            mounted?: boolean;
-            wallet?: Wallet;
-          }) => {
+          }: ConnectButtonProps) => {
             const ready = mounted;
             const connected = ready && account && chain;
 
