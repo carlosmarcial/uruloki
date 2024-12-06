@@ -2574,6 +2574,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           amount: sellAmount
         });
 
+        // Add a check for publicClient
+        if (!publicClient) {
+          console.error('Public client is not available');
+          throw new Error('Public client is not available');
+        }
+
         const currentAllowance = await publicClient.readContract({
           address: sellToken.address as `0x${string}`,
           abi: ERC20_ABI,
