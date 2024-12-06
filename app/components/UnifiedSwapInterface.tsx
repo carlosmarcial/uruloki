@@ -1693,17 +1693,17 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       console.log('Using Permit2 address:', spenderAddress);
 
       // Check current allowance for Permit2
-      const allowance = await publicClient.readContract({
+      const currentAllowance = BigInt(await publicClient.readContract({
         address: sellToken.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'allowance',
         args: [address as `0x${string}`, spenderAddress as `0x${string}`],
-      });
+      }).toString());
 
-      console.log('Current Permit2 allowance:', allowance?.toString());
+      console.log('Current Permit2 allowance:', currentAllowance.toString());
       console.log('Required amount:', sellAmountBigInt.toString());
 
-      if (!allowance || sellAmountBigInt > (allowance as bigint)) {
+      if (!currentAllowance || sellAmountBigInt > currentAllowance) {
         console.log('Approval needed, preparing transaction...');
         
         const { request } = await publicClient.simulateContract({
@@ -2580,12 +2580,12 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           throw new Error('Public client is not available');
         }
 
-        const currentAllowance = await publicClient.readContract({
+        const currentAllowance = BigInt(await publicClient.readContract({
           address: sellToken.address as `0x${string}`,
           abi: ERC20_ABI,
           functionName: 'allowance',
           args: [address as `0x${string}`, allowanceTarget as `0x${string}`],
-        });
+        }).toString());
 
         const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
         if (currentAllowance < sellAmountBigInt) {
