@@ -87,6 +87,9 @@ import CustomConnectButton from '@/app/components/CustomConnectButton';
 
 // import { TokenData, SolanaToken } from '@/app/types/token';
 
+// Add these constants near the top of the file after imports
+const DEFAULT_USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'; // USDC on Ethereum
+const DEFAULT_TSUKA_ADDRESS = '0xc5fB36dd2fb59d3B98dEfF88425a3F425Ee469eD'; // TSUKA on Ethereum
 
 // Then update the TokenData interface
 interface TokenData {
@@ -2885,6 +2888,54 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       setSellAmount(rawValue);
     }
   };
+
+  // Update the useEffect that handles token loading
+  useEffect(() => {
+    const loadTokens = async () => {
+      setIsLoadingTokens(true);
+      try {
+        if (activeChain === 'ethereum') {
+          const fetchedTokens = await fetchTokenList(chainId);
+          const transformedTokens = fetchedTokens.map(token => ({
+            ...token,
+            address: token.address.toLowerCase().startsWith('0x') 
+              ? (token.address as `0x${string}`) 
+              : (`0x${token.address}` as `0x${string}`),
+            chainId,
+            logoURI: token.logoURI || '',
+            _timestamp: Date.now()
+          }));
+
+          setTokens(transformedTokens);
+
+          // Set default tokens for Ethereum
+          const defaultUSDC = transformedTokens.find(
+            token => token.address.toLowerCase() === DEFAULT_USDC_ADDRESS.toLowerCase()
+          );
+          const defaultTSUKA = transformedTokens.find(
+            token => token.address.toLowerCase() === DEFAULT_TSUKA_ADDRESS.toLowerCase()
+          );
+
+          if (defaultUSDC && defaultTSUKA) {
+            setSellToken(defaultUSDC);
+            setBuyToken(defaultTSUKA);
+          }
+        } else {
+          // Existing Solana token loading logic
+          const solanaTokensList = await fetchSolanaTokens();
+          setSolanaTokens(solanaTokensList);
+          setTokens(solanaTokensList);
+        }
+      } catch (error) {
+        console.error('Error fetching tokens:', error);
+        setError('Failed to fetch tokens');
+      } finally {
+        setIsLoadingTokens(false);
+      }
+    };
+
+    loadTokens();
+  }, [chainId, activeChain]);
 
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
