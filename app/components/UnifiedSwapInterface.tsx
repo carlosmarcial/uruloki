@@ -82,8 +82,9 @@ import SolanaSlippageSettings from './SolanaSlippageSettings';
 import ChainSelector from './ChainSelector';
 import type { PublicClient, WalletClient } from 'viem';
 import type { Chain } from 'viem';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import type { ConnectButtonProps } from '@rainbow-me/rainbowkit';
+import { ConnectButton, type ConnectButtonProps } from '@rainbow-me/rainbowkit';
+import CustomConnectButton from '@/app/components/CustomConnectButton';
+
 // import { TokenData, SolanaToken } from '@/app/types/token';
 
 
@@ -2885,66 +2886,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     }
   };
 
-  const CustomConnectButton = () => {
-    return (
-      <ConnectButton.Custom>
-        {({
-          account,
-          chain,
-          openAccountModal,
-          openChainModal,
-          openConnectModal,
-          mounted,
-        }: {
-          account?: { address: string; displayName: string; balanceFormatted?: string };
-          chain?: { id: number; name: string; unsupported?: boolean };
-          openAccountModal: () => void;
-          openChainModal: () => void;
-          openConnectModal: () => void;
-          mounted: boolean;
-        }) => {
-          const ready = mounted;
-          const connected = ready && account && chain;
-
-          return (
-            <div
-              {...(!ready && {
-                'aria-hidden': true,
-                style: {
-                  opacity: 0,
-                  pointerEvents: 'none',
-                  userSelect: 'none',
-                },
-              })}
-            >
-              {(() => {
-                if (!connected) {
-                  return (
-                    <button 
-                      onClick={openConnectModal} 
-                      className="bg-[#77be44] hover:bg-[#69aa3b] text-white font-bold py-3 px-6 rounded-sm"
-                    >
-                      Select Wallet
-                    </button>
-                  );
-                }
-
-                return (
-                  <button 
-                    onClick={openAccountModal}
-                    className="bg-[#77be44] hover:bg-[#69aa3b] text-white font-bold py-3 px-6 rounded-sm"
-                  >
-                    {account.displayName}
-                  </button>
-                );
-              })()}
-            </div>
-          );
-        }}
-      </ConnectButton.Custom>
-    );
-  };
-
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">
       <div className="w-full mb-4">
@@ -3212,6 +3153,7 @@ type Wallet = {
     };
   };
 };
+
 
 
 
