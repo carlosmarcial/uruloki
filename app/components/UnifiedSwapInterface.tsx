@@ -401,13 +401,19 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   const [tokenAllowances, setTokenAllowances] = useState<{[address: string]: bigint}>({});
 
   // Update the useContractRead hook and remove refetchAllowance
-  const { data: allowance } = useContractRead({
+  const { data: allowance, isError: allowanceError } = useContractRead({
     address: sellToken?.address as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'allowance',
     args: sellToken && address ? [address as `0x${string}`, exchangeProxyAddress] : undefined,
     query: {
-      enabled: Boolean(sellToken && address)
+      enabled: Boolean(
+        sellToken && 
+        address && 
+        activeChain === 'ethereum' && 
+        sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()
+      ),
+      retry: false
     }
   });
 
@@ -2124,22 +2130,20 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             <div className="flex justify-between mb-2">
               <span className="text-gray-400">Sell</span>
             </div>
-            <div className="flex items-center bg-gray-800 rounded-lg p-3">
+            <div className={`flex items-center ${darkThemeClasses.secondary} rounded-lg p-3`}>
               <input
                 type="text"
-                value={formatDisplayAmount(sellAmount)}
+                value={sellAmount}
                 onChange={(e) => {
-                  // Remove commas from the input
-                  const rawValue = e.target.value.replace(/,/g, '');
-                  
-                  // Allow empty string, numbers, and decimals
-                  // This regex allows: empty string, integers, decimals, and prevents multiple dots
-                  if (rawValue === '' || /^\d*\.?\d*$/.test(rawValue)) {
-                    // Prevent more than one decimal point
-                    const decimalPoints = (rawValue.match(/\./g) || []).length;
-                    if (decimalPoints <= 1) {
-                      setSellAmount(rawValue);
-                    }
+                  const value = e.target.value;
+                  // Allow empty input
+                  if (value === '') {
+                    setSellAmount('');
+                    return;
+                  }
+                  // Allow numbers and a single decimal point
+                  if (/^\d*\.?\d*$/.test(value)) {
+                    setSellAmount(value);
                   }
                 }}
                 className="bg-transparent text-white text-2xl w-full outline-none"
@@ -2149,10 +2153,28 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             </div>
             <div className="flex justify-between mt-2 text-sm">
               <span className="text-gray-400">
-                {solanaTokenBalance !== null && sellToken && (
+                {activeChain === 'ethereum' ? (
+                  sellToken && (
+                    sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? (
+                      !ethBalanceError && ethBalance ? 
+                        `Balance: ${Number(formatUnits(ethBalance.value, 18)).toFixed(4)} ETH` :
+                        'Balance: 0 ETH'
+                    ) : (
+                      !sellTokenBalanceError && sellTokenBalance ? 
+                        `Balance: ${Number(formatUnits(sellTokenBalance.value, sellToken.decimals)).toFixed(sellToken.decimals > 6 ? 4 : 2)} ${sellToken.symbol}` :
+                        `Balance: 0 ${sellToken.symbol}`
+                    )
+                  )
+                ) : (
+                  solanaTokenBalance !== null && sellToken && 
                   formatBalanceDisplay(solanaTokenBalance, sellToken.symbol)
                 )}
               </span>
+              {activeChain === 'ethereum' && sellTokenUsdValue && (
+                <span className="text-gray-400">
+                  {sellTokenUsdValue}
+                </span>
+              )}
             </div>
           </div>
 
@@ -2390,11 +2412,21 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   }, [activeChain]);
 
   // Add these hooks at the top of the component
-  const { data: sellTokenBalance } = useBalance({
+  const { data: sellTokenBalance, isError: sellTokenBalanceError } = useBalance({
     address,
-    token: sellToken?.address as `0x${string}`,
+    token: sellToken?.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? undefined : sellToken?.address as `0x${string}`,
     query: {
-      enabled: !!sellToken && !!address && activeChain === 'ethereum'
+      enabled: Boolean(sellToken && address && activeChain === 'ethereum' && sellToken.address !== ETH_ADDRESS),
+      retry: false
+    }
+  });
+
+  // Add ETH balance hook
+  const { data: ethBalance, isError: ethBalanceError } = useBalance({
+    address,
+    query: {
+      enabled: Boolean(address && activeChain === 'ethereum'),
+      retry: false
     }
   });
 
@@ -2507,13 +2539,6 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     solanaTokenBalance
   ]);
 
-  // Add a new hook for native ETH balance
-  const { data: ethBalance } = useBalance({
-    address,
-    query: {
-      enabled: !!address && activeChain === 'ethereum'
-    }
-  });
 
   // Add this helper function at the top level
   const formatBalance = (value: bigint, decimals: number, symbol: string) => {
@@ -2703,14 +2728,17 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           <div className={`flex items-center ${darkThemeClasses.secondary} rounded-lg p-3`}>
             <input
               type="text"
-              value={formatDisplayAmount(sellAmount)}
+              value={sellAmount}
               onChange={(e) => {
-                const rawValue = e.target.value.replace(/,/g, '');
-                if (rawValue === '' || /^\d*\.?\d*$/.test(rawValue)) {
-                  const decimalPoints = (rawValue.match(/\./g) || []).length;
-                  if (decimalPoints <= 1) {
-                    setSellAmount(rawValue);
-                  }
+                const value = e.target.value;
+                // Allow empty input
+                if (value === '') {
+                  setSellAmount('');
+                  return;
+                }
+                // Allow numbers and a single decimal point
+                if (/^\d*\.?\d*$/.test(value)) {
+                  setSellAmount(value);
                 }
               }}
               className="bg-transparent text-white text-2xl w-full outline-none"
@@ -2720,17 +2748,21 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           </div>
           <div className="flex justify-between mt-2 text-sm">
             <span className="text-gray-400">
-              {sellToken && (
-                <>
-                  {sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() 
-                    ? ethBalance 
-                      ? formatBalanceDisplay(parseFloat(formatUnits(ethBalance.value, 18)), 'ETH')
-                      : 'Balance: 0 ETH'
-                    : sellTokenBalance
-                      ? formatBalanceDisplay(parseFloat(formatUnits(sellTokenBalance.value, sellTokenBalance.decimals)), sellTokenBalance.symbol)
-                      : `Balance: 0 ${sellToken.symbol}`
-                  }
-                </>
+              {activeChain === 'ethereum' ? (
+                sellToken && (
+                  sellToken.address.toLowerCase() === ETH_ADDRESS.toLowerCase() ? (
+                    !ethBalanceError && ethBalance ? 
+                      `Balance: ${Number(formatUnits(ethBalance.value, 18)).toFixed(4)} ETH` :
+                      'Balance: 0 ETH'
+                  ) : (
+                    !sellTokenBalanceError && sellTokenBalance ? 
+                      `Balance: ${Number(formatUnits(sellTokenBalance.value, sellToken.decimals)).toFixed(sellToken.decimals > 6 ? 4 : 2)} ${sellToken.symbol}` :
+                      `Balance: 0 ${sellToken.symbol}`
+                  )
+                )
+              ) : (
+                solanaTokenBalance !== null && sellToken && 
+                formatBalanceDisplay(solanaTokenBalance, sellToken.symbol)
               )}
             </span>
             {activeChain === 'ethereum' && sellTokenUsdValue && (
@@ -2833,6 +2865,23 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       />
     </div>
   );
+
+  // Add this helper function at the top of the component
+  const handleAmountInput = (value: string) => {
+    // Remove any commas from the input
+    const rawValue = value.replace(/,/g, '');
+    
+    // Allow empty input
+    if (rawValue === '') {
+      setSellAmount('');
+      return;
+    }
+
+    // Only allow numbers and a single decimal point
+    if (/^\d*\.?\d*$/.test(rawValue)) {
+      setSellAmount(rawValue);
+    }
+  };
 
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">

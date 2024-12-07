@@ -2,7 +2,7 @@
 const formatNumberWithCommas = (value: string) => {
   if (!value) return '';
   
-  // Convert to number to check if it's >= 1
+  // Convert to number to check if valid
   const num = parseFloat(value);
   if (isNaN(num)) return '';
 
@@ -12,13 +12,7 @@ const formatNumberWithCommas = (value: string) => {
   // Add commas to whole number part
   const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   
-  // If number is >= 1, limit to 2 decimal places
-  if (Math.abs(num) >= 1) {
-    if (!decimalPart) return formattedWholePart;
-    return `${formattedWholePart}.${decimalPart.slice(0, 2)}`;
-  }
-  
-  // For numbers < 1, keep all decimal places
+  // Always preserve all decimal places
   return decimalPart ? `${formattedWholePart}.${decimalPart}` : formattedWholePart;
 };
 
