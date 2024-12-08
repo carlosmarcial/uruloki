@@ -3,6 +3,7 @@ import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import TokenImage from './TokenImage';
+import { ETH_ADDRESS } from '@/app/constants';
 
 interface Token {
   address: string;
@@ -41,6 +42,7 @@ const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds (60 minutes * 6
 
 const WRAPPED_SOL_ADDRESS = 'So11111111111111111111111111111111111111112';
 const NATIVE_SOL_ADDRESS = '11111111111111111111111111111111';
+const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'; // Mainnet WETH address
 
 const getCachedAnalysis = (tokenAddress: string, network: string): string | null => {
   try {
@@ -272,7 +274,11 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
       setIsLoading(true);
       setError(null);
 
-      const formattedAddress = formatTokenAddress(token.address, network);
+      // If token is ETH, use WETH address for data fetching
+      const formattedAddress = token.address.toLowerCase() === ETH_ADDRESS.toLowerCase()
+        ? WETH_ADDRESS
+        : formatTokenAddress(token.address, network);
+
       console.log('Fetching pool for:', { 
         network, 
         address: formattedAddress,
@@ -521,7 +527,19 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
         return;
       }
 
-      const formattedAddress = formatTokenAddress(token.address, network);
+      // If token is ETH, use WETH address but keep ETH display properties
+      let formattedAddress;
+      let displaySymbol = token.symbol;
+      let displayName = token.name;
+      
+      if (token.address.toLowerCase() === ETH_ADDRESS.toLowerCase()) {
+        formattedAddress = WETH_ADDRESS;
+        // Keep ETH display properties
+        displaySymbol = 'ETH';
+        displayName = 'Ethereum';
+      } else {
+        formattedAddress = formatTokenAddress(token.address, network);
+      }
 
       // Get pool data with increased limit for better liquidity calculation
       const poolsResponse = await axios.get(
@@ -655,8 +673,8 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
 
       // Update the token network reference
       const tokenData = {
-        name: token.name,
-        symbol: token.symbol,
+        name: displayName,
+        symbol: displaySymbol,
         address: formattedAddress,
         network
       };
