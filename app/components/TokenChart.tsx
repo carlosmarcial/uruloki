@@ -96,47 +96,47 @@ const StreamingText = ({ text, activeChain }: { text: string; activeChain: 'ethe
   }, [text]);
 
   const formatText = (text: string) => {
-    // Update the regex to better match all numbered sections
+    // More strict section splitting - only match numbers 1-6 followed by a period and space
     const sections = text
-      .split(/(?=\d+\.\s*[A-Z])/g)  // Changed regex to be more lenient with spaces and match any capitalized word
+      .split(/(?=(?:[1-6])\.\s+[A-Z])/g)
       .filter(section => section.trim());
     
     return sections.map((section, index) => {
-      // More robust heading detection
+      // More strict heading detection
       const lines = section.split('\n').map(line => line.trim()).filter(Boolean);
-      const headingIndex = lines.findIndex(line => /^\d+\.\s*[A-Za-z]/.test(line));
+      const headingIndex = lines.findIndex(line => /^[1-6]\.\s+[A-Za-z]/.test(line));
       
       if (headingIndex === -1) return null;
 
       const heading = lines[headingIndex];
       const content = lines.slice(headingIndex + 1);
 
-      // Ensure all numbered sections are treated as main headings
-      const isMainHeading = /^\d+\.\s+[A-Za-z]/.test(heading);
+      // Ensure we're dealing with a valid section number (1-6)
+      const isMainHeading = /^[1-6]\.\s+[A-Za-z]/.test(heading);
+      const sectionNumber = parseInt(heading.match(/^(\d+)/)?.[1] || '0');
+
+      // Only treat as main heading if it's a number 1-6
+      if (!isMainHeading || sectionNumber < 1 || sectionNumber > 6) return null;
 
       return (
         <div key={index} className="mb-8 last:mb-4">
-          {/* Apply heading styles to all numbered sections */}
-          {isMainHeading ? (
-            <h2 
-              className={`text-lg font-bold mb-4 ${
-                activeChain === 'ethereum' 
-                  ? 'text-[#77be44]' 
-                  : 'text-purple-500'
-              }`}
-            >
-              {heading.trim()}
-            </h2>
-          ) : (
-            <h3 className="text-base font-semibold text-gray-300 mt-4 mb-2">
-              {heading.trim()}
-            </h3>
-          )}
+          <h2 
+            className={`text-lg font-bold mb-4 ${
+              activeChain === 'ethereum' 
+                ? 'text-[#77be44]' 
+                : 'text-purple-500'
+            }`}
+          >
+            {heading.trim()}
+          </h2>
 
-          {/* Rest of the content formatting remains the same */}
           <div className="space-y-3 text-gray-100">
             {content.map((line, pIndex) => {
-              // Skip empty lines
+              // Skip any line that starts with an invalid section number
+              if (/^\d+\.\s+/.test(line) && !/^[1-6]\.\s+/.test(line)) {
+                return null;
+              }
+
               if (!line.trim()) return null;
 
               // Handle bullet points (both • and - symbols)
@@ -734,82 +734,74 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
         network
       };
 
-      // Add timeout for the fetch request
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 55000); // 55 second timeout
 
-      const response = await fetch('/api/technical-analysis', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          token: tokenData,
-          marketData
-        }),
-        signal: controller.signal
-      });
+      try {
+        const response = await fetch('/api/technical-analysis', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            token: tokenData,
+            marketData
+          }),
+          signal: controller.signal
+        });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch analysis');
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let analysisText = '';
-      let lastUpdateTime = Date.now();
-
-      if (reader) {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            
-            if (done) {
-              // Verify we have all sections before finalizing
-              const sections = analysisText.split(/\d+\./);
-              if (sections.length < 6) {
-                console.warn('Incomplete analysis detected');
-                analysisText += '\n\nNote: Analysis may be incomplete. Please try again.';
-              }
-              break;
-            }
-            
-            const chunk = decoder.decode(value);
-            analysisText += chunk;
-            
-            // Only update UI every 100ms to prevent too frequent rerenders
-            if (Date.now() - lastUpdateTime > 100) {
-              setAnalysis(prev => ({
-                ...prev,
-                analysis: analysisText,
-                loading: false,
-                error: null
-              }));
-              lastUpdateTime = Date.now();
-            }
-          }
-
-          // Final update and caching
-          setAnalysis(prev => ({
-            ...prev,
-            analysis: analysisText,
-            loading: false,
-            error: null
-          }));
-
-          setCachedAnalysis(token.address, network, analysisText);
-        } catch (error: unknown) {
-          // Type guard for DOMException (which includes AbortError)
-          if (error instanceof DOMException && error.name === 'AbortError') {
-            throw new Error('Analysis request timed out. Please try again.');
-          }
-          // Re-throw other errors
-          throw error;
-        } finally {
-          reader.releaseLock();
+        if (!response.ok) {
+          throw new Error('Failed to fetch analysis');
         }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let analysisText = '';
+        let lastChunkTime = Date.now();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+
+          // Reset timeout on each chunk
+          clearTimeout(timeoutId);
+          const chunkTimeout = setTimeout(() => controller.abort(), 55000);
+          
+          const chunk = decoder.decode(value);
+          analysisText += chunk;
+
+          // Update UI less frequently
+          if (Date.now() - lastChunkTime > 200) {
+            setAnalysis(prev => ({
+              ...prev,
+              analysis: analysisText,
+              loading: false,
+              error: null
+            }));
+            lastChunkTime = Date.now();
+          }
+
+          clearTimeout(chunkTimeout);
+        }
+
+        // Verify complete response
+        const sections = analysisText.split(/\d+\./);
+        if (sections.length < 6) {
+          throw new Error('Incomplete analysis received');
+        }
+
+        // Final update
+        setAnalysis(prev => ({
+          ...prev,
+          analysis: analysisText,
+          loading: false,
+          error: null
+        }));
+
+        setCachedAnalysis(token.address, network, analysisText);
+      } finally {
+        clearTimeout(timeoutId);
       }
     } catch (error: unknown) {
       console.error('Error fetching analysis:', error);

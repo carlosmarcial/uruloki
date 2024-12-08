@@ -26,6 +26,8 @@ interface Pool {
 // Add this timeout utility
 const timeout = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+export const maxDuration = 60; // Set route handler timeout to 60 seconds
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -132,73 +134,50 @@ Follow-up paragraph if needed.`;
         let timeoutId: NodeJS.Timeout | undefined;
 
         try {
+          // Increase the timeout for OpenAI
           const completion = await openai.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
             model: "gpt-4-1106-preview",
             temperature: 0.7,
             max_tokens: 2500,
-            stream: true
+            stream: true,
+          }, {
+            timeout: 50000, // 50 second timeout for OpenAI
           });
 
           let fullResponse = '';
-          let lastChunkTime = Date.now();
+          let chunkCount = 0;
 
-          // Create a promise that will reject after timeout
-          const timeoutPromise = new Promise((_, reject) => {
+          for await (const chunk of completion) {
+            // Reset timeout on each chunk
+            if (timeoutId) clearTimeout(timeoutId);
             timeoutId = setTimeout(() => {
-              controller.error(new Error('Analysis timed out after 45 seconds'));
-            }, 45000);
-          });
+              controller.error(new Error('Stream timeout'));
+            }, 10000); // 10 second timeout between chunks
 
-          // Process the stream
-          const processStream = async () => {
-            try {
-              for await (const chunk of completion) {
-                const content = chunk.choices[0]?.delta?.content || '';
-                if (content) {
-                  fullResponse += content;
-                  const encoder = new TextEncoder();
-                  controller.enqueue(encoder.encode(content));
-                  
-                  // Update last chunk time
-                  lastChunkTime = Date.now();
+            const content = chunk.choices[0]?.delta?.content || '';
+            if (content) {
+              fullResponse += content;
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode(content));
+              chunkCount++;
+
+              // Every 10 chunks, verify we're getting a complete response
+              if (chunkCount % 10 === 0) {
+                const sections = fullResponse.split(/\d+\./);
+                if (sections.length >= 6) {
+                  // We have all sections, clear timeout
+                  if (timeoutId) clearTimeout(timeoutId);
                 }
-                
-                // Small delay to prevent overwhelming the connection
-                await new Promise(resolve => setTimeout(resolve, 10));
               }
-
-              // Verify we have a complete response
-              const sections = fullResponse.split(/\d+\./);
-              if (sections.length < 6) {
-                console.warn('Incomplete analysis received, sections found:', sections.length);
-                const missingNotice = "\n\nNote: Some sections of the analysis may be incomplete. Please try refreshing for a complete analysis.";
-                controller.enqueue(new TextEncoder().encode(missingNotice));
-              }
-
-              if (timeoutId) {
-                clearTimeout(timeoutId);
-              }
-              controller.close();
-            } catch (error) {
-              if (timeoutId) {
-                clearTimeout(timeoutId);
-              }
-              throw error;
             }
-          };
+          }
 
-          // Race between the stream processing and timeout
-          await Promise.race([
-            processStream(),
-            timeoutPromise
-          ]);
-
+          if (timeoutId) clearTimeout(timeoutId);
+          controller.close();
         } catch (error) {
           console.error('Streaming error:', error);
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
+          if (timeoutId) clearTimeout(timeoutId);
           const errorMessage = error instanceof Error ? error.message : 'An error occurred';
           const encoder = new TextEncoder();
           controller.enqueue(encoder.encode(`\n\nError: ${errorMessage}`));
@@ -207,13 +186,14 @@ Follow-up paragraph if needed.`;
       }
     });
 
-    // Return the stream with appropriate headers
+    // Return with appropriate headers
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no' // Disable buffering
+        'X-Accel-Buffering': 'no',
+        'Transfer-Encoding': 'chunked'
       }
     });
 
