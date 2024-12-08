@@ -755,51 +755,59 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
         }
 
         const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Failed to get response reader');
+        }
+
         const decoder = new TextDecoder();
         let analysisText = '';
         let lastChunkTime = Date.now();
 
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) break;
 
-          // Reset timeout on each chunk
-          clearTimeout(timeoutId);
-          const chunkTimeout = setTimeout(() => controller.abort(), 55000);
-          
-          const chunk = decoder.decode(value);
-          analysisText += chunk;
+            // Reset timeout on each chunk
+            clearTimeout(timeoutId);
+            const chunkTimeout = setTimeout(() => controller.abort(), 55000);
+            
+            const chunk = decoder.decode(value);
+            analysisText += chunk;
 
-          // Update UI less frequently
-          if (Date.now() - lastChunkTime > 200) {
-            setAnalysis(prev => ({
-              ...prev,
-              analysis: analysisText,
-              loading: false,
-              error: null
-            }));
-            lastChunkTime = Date.now();
+            // Update UI less frequently
+            if (Date.now() - lastChunkTime > 200) {
+              setAnalysis(prev => ({
+                ...prev,
+                analysis: analysisText,
+                loading: false,
+                error: null
+              }));
+              lastChunkTime = Date.now();
+            }
+
+            clearTimeout(chunkTimeout);
           }
 
-          clearTimeout(chunkTimeout);
+          // Verify complete response
+          const sections = analysisText.split(/\d+\./);
+          if (sections.length < 6) {
+            throw new Error('Incomplete analysis received');
+          }
+
+          // Final update
+          setAnalysis(prev => ({
+            ...prev,
+            analysis: analysisText,
+            loading: false,
+            error: null
+          }));
+
+          setCachedAnalysis(token.address, network, analysisText);
+        } finally {
+          reader.releaseLock(); // Make sure to release the reader
         }
-
-        // Verify complete response
-        const sections = analysisText.split(/\d+\./);
-        if (sections.length < 6) {
-          throw new Error('Incomplete analysis received');
-        }
-
-        // Final update
-        setAnalysis(prev => ({
-          ...prev,
-          analysis: analysisText,
-          loading: false,
-          error: null
-        }));
-
-        setCachedAnalysis(token.address, network, analysisText);
       } finally {
         clearTimeout(timeoutId);
       }
