@@ -23,6 +23,9 @@ interface Pool {
   liquidity: string;
 }
 
+// Add this timeout utility
+const timeout = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -92,45 +95,42 @@ Please provide a comprehensive technical analysis focusing on:
 6. Disclaimer
 
 Important formatting instructions:
-1. Each numbered section should be on its own line
-2. Add a blank line after each section heading
-3. Use simple numbered sections (1., 2., etc.)
-4. Start each major section with the number, period, and title on one line
-5. Always begin the Price Action Analysis section by stating the current price (${marketData.price.usd})
-6. When discussing liquidity, always specify that the figures represent DEX liquidity only, not total market liquidity
-7. For the Market Structure section, follow this order:
-   - Start with market cap analysis and its implications
-   - Then analyze the liquidity to market cap ratio (high ratio suggests better market efficiency)
-   - Discuss what the ratio means for trading impact and market stability
-   - End with a breakdown of DEX liquidity distribution across pools
-8. Always end with section 6 (Disclaimer) containing the following text:
+1. Each section MUST start with its number and title on a new line (e.g., "1. Price Action Analysis")
+2. Add TWO line breaks after each section heading
+3. Add ONE line break between paragraphs
+4. Format bullet points with the "•" symbol, one per line
+5. The Disclaimer section MUST follow this exact format:
 
 6. Disclaimer
 
-This analysis is based exclusively on decentralized exchange (DEX) data and does not include any data from centralized exchanges. Trading volumes, liquidity figures, and market metrics presented here reflect DEX activity only, which may differ significantly from the total market picture. This technical analysis is provided for informational purposes only and should not be considered as financial advice. Cryptocurrency investments carry high market risk, and past performance does not guarantee future results. Always conduct your own research and consult with qualified financial advisors before making any investment decisions. Uruloki DEX's AI analysis tool is designed to provide market insights but should not be the sole basis for any trading decisions.
+IMPORTANT: This analysis is based exclusively on decentralized exchange (DEX) data and does not include any data from centralized exchanges. All trading volumes, liquidity figures, and market metrics presented here reflect DEX activity only, which may differ significantly from the total market picture.
 
-Format example:
-1. Price Action Analysis
+Additional disclaimers:
+• This technical analysis is provided for informational purposes only and should not be considered as financial advice
+• Cryptocurrency investments carry high market risk
+• Past performance does not guarantee future results
+• Always conduct your own research and consult with qualified financial advisors before making any investment decisions
+• Uruloki DEX's AI analysis tool is designed to provide market insights but should not be the sole basis for any trading decisions
 
-[Analysis text here...]
+Please ensure each section follows this structure:
 
-2. Volume Analysis & Trading Activity
+1. Section Title
 
-[Analysis text here...]
+Main paragraph with analysis.
 
-Guidelines for Market Structure Analysis:
-- A liquidity/market cap ratio above 5% typically indicates good market efficiency
-- Ratio below 1% might indicate higher susceptibility to price impact
-- Consider how distributed the liquidity is across different pools
-- Factor in the token's market cap tier when assessing the ratio
-- For large-cap tokens (>$1B), even lower ratios might be acceptable due to CEX liquidity
-`;
+• Key point one
+• Key point two
+• Key point three
+
+Follow-up paragraph if needed.`;
 
     console.log('Starting streaming analysis for:', token.symbol);
 
-    // Create a new ReadableStream for streaming the response
+    // Update the streaming implementation
     const stream = new ReadableStream({
       async start(controller) {
+        let timeoutId: NodeJS.Timeout | undefined;
+
         try {
           const completion = await openai.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
@@ -141,36 +141,79 @@ Guidelines for Market Structure Analysis:
           });
 
           let fullResponse = '';
-          for await (const chunk of completion) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            if (content) {
-              fullResponse += content;
-              const encoder = new TextEncoder();
-              controller.enqueue(encoder.encode(content));
+          let lastChunkTime = Date.now();
+
+          // Create a promise that will reject after timeout
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => {
+              controller.error(new Error('Analysis timed out after 45 seconds'));
+            }, 45000);
+          });
+
+          // Process the stream
+          const processStream = async () => {
+            try {
+              for await (const chunk of completion) {
+                const content = chunk.choices[0]?.delta?.content || '';
+                if (content) {
+                  fullResponse += content;
+                  const encoder = new TextEncoder();
+                  controller.enqueue(encoder.encode(content));
+                  
+                  // Update last chunk time
+                  lastChunkTime = Date.now();
+                }
+                
+                // Small delay to prevent overwhelming the connection
+                await new Promise(resolve => setTimeout(resolve, 10));
+              }
+
+              // Verify we have a complete response
+              const sections = fullResponse.split(/\d+\./);
+              if (sections.length < 6) {
+                console.warn('Incomplete analysis received, sections found:', sections.length);
+                const missingNotice = "\n\nNote: Some sections of the analysis may be incomplete. Please try refreshing for a complete analysis.";
+                controller.enqueue(new TextEncoder().encode(missingNotice));
+              }
+
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+              controller.close();
+            } catch (error) {
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+              throw error;
             }
-          }
+          };
 
-          // Verify we got all sections
-          const sections = fullResponse.split(/\d+\./);
-          if (sections.length < 6) {
-            console.warn('Incomplete analysis received, sections found:', sections.length);
-            // Optionally retry or handle incomplete analysis
-          }
+          // Race between the stream processing and timeout
+          await Promise.race([
+            processStream(),
+            timeoutPromise
+          ]);
 
-          controller.close();
         } catch (error) {
           console.error('Streaming error:', error);
-          controller.error(error);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+          const encoder = new TextEncoder();
+          controller.enqueue(encoder.encode(`\n\nError: ${errorMessage}`));
+          controller.close();
         }
       }
     });
 
-    // Return the stream with the appropriate headers
+    // Return the stream with appropriate headers
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no' // Disable buffering
       }
     });
 

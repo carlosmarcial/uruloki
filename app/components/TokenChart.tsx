@@ -89,49 +89,104 @@ const setCachedAnalysis = (tokenAddress: string, network: string, analysis: stri
 };
 
 const StreamingText = ({ text, activeChain }: { text: string; activeChain: 'ethereum' | 'solana' }) => {
-  const [displayText, setDisplayText] = useState<string[]>([]);
+  const [displayText, setDisplayText] = useState<string>('');
   
   useEffect(() => {
-    const words = text.split(' ');
-    const currentDisplayed = displayText.join(' ');
-    const remainingText = text.slice(currentDisplayed.length).trim();
-    
-    if (remainingText) {
-      const newWords = remainingText.split(' ');
-      if (newWords[0]) {
-        const timer = setTimeout(() => {
-          setDisplayText(prev => [...prev, newWords[0]]);
-        }, 50);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [text, displayText]);
+    setDisplayText(text);
+  }, [text]);
 
-  // Process text to add formatting
   const formatText = (text: string) => {
-    const lines = text.split('\n');
-    return lines.map((line, index) => {
-      // Check if line is a heading (starts with a number followed by a period)
-      if (/^\d+\./.test(line)) {
-        return (
-          <div key={index} className="mb-4 mt-8 first:mt-0">
-            <span className={`${
-              activeChain === 'ethereum' 
-                ? 'text-[#77be44]' 
-                : 'text-purple-500'
-            } font-semibold`}>
-              {line}
-            </span>
+    // Update the regex to better match all numbered sections
+    const sections = text
+      .split(/(?=\d+\.\s*[A-Z])/g)  // Changed regex to be more lenient with spaces and match any capitalized word
+      .filter(section => section.trim());
+    
+    return sections.map((section, index) => {
+      // More robust heading detection
+      const lines = section.split('\n').map(line => line.trim()).filter(Boolean);
+      const headingIndex = lines.findIndex(line => /^\d+\.\s*[A-Za-z]/.test(line));
+      
+      if (headingIndex === -1) return null;
+
+      const heading = lines[headingIndex];
+      const content = lines.slice(headingIndex + 1);
+
+      // Ensure all numbered sections are treated as main headings
+      const isMainHeading = /^\d+\.\s+[A-Za-z]/.test(heading);
+
+      return (
+        <div key={index} className="mb-8 last:mb-4">
+          {/* Apply heading styles to all numbered sections */}
+          {isMainHeading ? (
+            <h2 
+              className={`text-lg font-bold mb-4 ${
+                activeChain === 'ethereum' 
+                  ? 'text-[#77be44]' 
+                  : 'text-purple-500'
+              }`}
+            >
+              {heading.trim()}
+            </h2>
+          ) : (
+            <h3 className="text-base font-semibold text-gray-300 mt-4 mb-2">
+              {heading.trim()}
+            </h3>
+          )}
+
+          {/* Rest of the content formatting remains the same */}
+          <div className="space-y-3 text-gray-100">
+            {content.map((line, pIndex) => {
+              // Skip empty lines
+              if (!line.trim()) return null;
+
+              // Handle bullet points (both • and - symbols)
+              if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
+                return (
+                  <div key={pIndex} className="flex items-start gap-3 ml-4">
+                    <span className="text-gray-400 mt-1.5 text-xs">•</span>
+                    <span className="flex-1 leading-relaxed">
+                      {line.trim().replace(/^[•-]\s*/, '')}
+                    </span>
+                  </div>
+                );
+              }
+
+              // Handle sub-headings (like "Additional disclaimers:")
+              if (line.trim().endsWith(':')) {
+                return (
+                  <h3 key={pIndex} className="text-base font-semibold text-gray-300 mt-4 mb-2">
+                    {line.trim()}
+                  </h3>
+                );
+              }
+
+              // Handle "IMPORTANT:" prefix specially
+              if (line.trim().startsWith('IMPORTANT:')) {
+                return (
+                  <p key={pIndex} className="font-medium text-yellow-200 leading-relaxed">
+                    {line.trim()}
+                  </p>
+                );
+              }
+
+              // Regular paragraphs
+              return (
+                <p key={pIndex} className="leading-7 text-base text-gray-200">
+                  {line.trim()}
+                </p>
+              );
+            })}
           </div>
-        );
-      }
-      return <div key={index} className="mb-2">{line}</div>;
+        </div>
+      );
     });
   };
 
   return (
-    <div className="text-white whitespace-pre-wrap p-4">
-      {formatText(displayText.join(' '))}
+    <div className="text-white p-8 overflow-auto">
+      <div className="max-w-2xl mx-auto px-4">
+        {formatText(displayText)}
+      </div>
     </div>
   );
 };
@@ -679,7 +734,10 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
         network
       };
 
-      // When fetching from API, use streaming response
+      // Add timeout for the fetch request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+
       const response = await fetch('/api/technical-analysis', {
         method: 'POST',
         headers: {
@@ -688,55 +746,91 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
         body: JSON.stringify({
           token: tokenData,
           marketData
-        })
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error('Failed to fetch analysis');
       }
 
-      // Handle streaming response
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let analysisText = '';
+      let lastUpdateTime = Date.now();
 
       if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value);
-          analysisText += chunk;
-          
-          // Update the analysis state with each chunk
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) {
+              // Verify we have all sections before finalizing
+              const sections = analysisText.split(/\d+\./);
+              if (sections.length < 6) {
+                console.warn('Incomplete analysis detected');
+                analysisText += '\n\nNote: Analysis may be incomplete. Please try again.';
+              }
+              break;
+            }
+            
+            const chunk = decoder.decode(value);
+            analysisText += chunk;
+            
+            // Only update UI every 100ms to prevent too frequent rerenders
+            if (Date.now() - lastUpdateTime > 100) {
+              setAnalysis(prev => ({
+                ...prev,
+                analysis: analysisText,
+                loading: false,
+                error: null
+              }));
+              lastUpdateTime = Date.now();
+            }
+          }
+
+          // Final update
           setAnalysis(prev => ({
             ...prev,
             analysis: analysisText,
             loading: false,
             error: null
           }));
+
+          // Cache the complete analysis
+          setCachedAnalysis(token.address, network, analysisText);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            throw new Error('Analysis request timed out. Please try again.');
+          }
+          throw error;
+        } finally {
+          reader.releaseLock();
         }
-
-        // Cache the complete analysis
-        setCachedAnalysis(token.address, network, analysisText);
       }
-
-    } catch (err) {
-      console.error('Error fetching analysis:', err);
+    } catch (error: unknown) {
+      console.error('Error fetching analysis:', error);
       let errorMessage = 'Failed to generate analysis. Please try again later.';
       
-      if (axios.isAxiosError(err)) {
-        const responseData = err.response?.data;
+      if (axios.isAxiosError(error)) {
+        const responseData = error.response?.data;
         console.log('API Error Response:', responseData);
         
-        if (err.response?.status === 404) {
+        if (error.response?.status === 404) {
           errorMessage = `Could not find trading data for ${token.symbol}. The token might not have enough liquidity.`;
-        } else if (err.response?.status === 400) {
+        } else if (error.response?.status === 400) {
           const errorDetail = responseData?.errors?.[0]?.detail;
           errorMessage = errorDetail || `Error fetching data for ${token.symbol}. Please try again.`;
         }
-      } else if (err instanceof Error) {
-        errorMessage = err.message;
+      } else if (error instanceof Error) {
+        // Handle AbortError specifically
+        if (error.name === 'AbortError') {
+          errorMessage = 'Analysis request timed out. Please try again.';
+        } else {
+          errorMessage = error.message;
+        }
       }
       
       setAnalysis(prev => ({
@@ -951,10 +1045,10 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
               className="absolute inset-0 bg-gray-900/95 backdrop-blur-sm shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="relative w-full h-full flex flex-col p-6">
+              <div className="relative w-full h-full flex flex-col">
                 {/* Token Logo */}
                 {selectedToken?.logoURI && (
-                  <div className="flex justify-center mb-4">
+                  <div className="flex justify-center pt-6">
                     <TokenImage 
                       src={selectedToken.logoURI} 
                       alt={selectedToken.symbol} 
@@ -964,20 +1058,19 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
                     />
                   </div>
                 )}
+                
                 <div className="flex-1 overflow-auto custom-scrollbar">
                   {analysis.loading ? (
                     <div className="flex items-center justify-center h-64">
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
                     </div>
                   ) : analysis.error ? (
-                    <div className="text-red-500 p-4">{analysis.error}</div>
+                    <div className="text-red-500 p-8 text-center">{analysis.error}</div>
                   ) : (
-                    <div className="prose prose-invert" style={{ maxWidth: '85ch' }}>
-                      <StreamingText 
-                        text={analysis.analysis} 
-                        activeChain={activeChain}
-                      />
-                    </div>
+                    <StreamingText 
+                      text={analysis.analysis} 
+                      activeChain={activeChain}
+                    />
                   )}
                 </div>
               </div>
