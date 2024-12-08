@@ -89,6 +89,7 @@ Please provide a comprehensive technical analysis focusing on:
 3. RSI Interpretation & Market Momentum (including detailed RSI analysis)
 4. Market Structure (focusing on market cap, liquidity ratios, and market efficiency)
 5. Short-term Technical Outlook (24-48h)
+6. Disclaimer
 
 Important formatting instructions:
 1. Each numbered section should be on its own line
@@ -102,6 +103,11 @@ Important formatting instructions:
    - Then analyze the liquidity to market cap ratio (high ratio suggests better market efficiency)
    - Discuss what the ratio means for trading impact and market stability
    - End with a breakdown of DEX liquidity distribution across pools
+8. Always end with section 6 (Disclaimer) containing the following text:
+
+6. Disclaimer
+
+This analysis is based exclusively on decentralized exchange (DEX) data and does not include any data from centralized exchanges. Trading volumes, liquidity figures, and market metrics presented here reflect DEX activity only, which may differ significantly from the total market picture. This technical analysis is provided for informational purposes only and should not be considered as financial advice. Cryptocurrency investments carry high market risk, and past performance does not guarantee future results. Always conduct your own research and consult with qualified financial advisors before making any investment decisions. Uruloki DEX's AI analysis tool is designed to provide market insights but should not be the sole basis for any trading decisions.
 
 Format example:
 1. Price Action Analysis
@@ -130,18 +136,27 @@ Guidelines for Market Structure Analysis:
             messages: [{ role: "user", content: prompt }],
             model: "gpt-4-1106-preview",
             temperature: 0.7,
-            max_tokens: 1000,
-            stream: true // Enable streaming
+            max_tokens: 2500,
+            stream: true
           });
 
+          let fullResponse = '';
           for await (const chunk of completion) {
             const content = chunk.choices[0]?.delta?.content || '';
             if (content) {
-              // Encode the content as UTF-8 and send it
+              fullResponse += content;
               const encoder = new TextEncoder();
               controller.enqueue(encoder.encode(content));
             }
           }
+
+          // Verify we got all sections
+          const sections = fullResponse.split(/\d+\./);
+          if (sections.length < 6) {
+            console.warn('Incomplete analysis received, sections found:', sections.length);
+            // Optionally retry or handle incomplete analysis
+          }
+
           controller.close();
         } catch (error) {
           console.error('Streaming error:', error);
