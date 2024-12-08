@@ -791,7 +791,7 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
             }
           }
 
-          // Final update
+          // Final update and caching
           setAnalysis(prev => ({
             ...prev,
             analysis: analysisText,
@@ -799,12 +799,13 @@ const TokenChart = forwardRef<TokenChartRef, TokenChartProps>(({
             error: null
           }));
 
-          // Cache the complete analysis
           setCachedAnalysis(token.address, network, analysisText);
-        } catch (error) {
-          if (error.name === 'AbortError') {
+        } catch (error: unknown) {
+          // Type guard for DOMException (which includes AbortError)
+          if (error instanceof DOMException && error.name === 'AbortError') {
             throw new Error('Analysis request timed out. Please try again.');
           }
+          // Re-throw other errors
           throw error;
         } finally {
           reader.releaseLock();
