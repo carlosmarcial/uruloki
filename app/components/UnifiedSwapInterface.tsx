@@ -2942,8 +2942,8 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       <div className="w-full mb-4">
         <ChainToggle activeChain={activeChain} setActiveChain={setActiveChain} />
       </div>
-      <div className="flex flex-col xl:flex-row gap-4 w-full justify-center items-start">
-        <div className={`w-full xl:w-[52.5%] ${darkThemeClasses.secondary} rounded-lg overflow-hidden`} style={{ height: '550px' }}>
+      <div className="flex flex-col xl:flex-row gap-4 w-full justify-center items-start px-4 xl:px-0">
+        <div className={`w-full xl:w-[52.5%] ${darkThemeClasses.secondary} rounded-lg overflow-hidden order-2 xl:order-1`} style={{ height: '550px' }}>
           <TokenChart 
             ref={chartRef}
             selectedToken={activeChain === 'solana' ? buyToken : buyToken}
@@ -2951,7 +2951,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             activeChain={activeChain}
           />
         </div>
-        <div className="w-full xl:w-[30%] flex flex-col" style={{ height: '550px' }}>
+        <div className="w-full xl:w-[30%] flex flex-col order-1 xl:order-2 relative z-10" style={{ height: '550px' }}>
           {activeChain === 'ethereum' ? (
             <div className={`h-full ${darkThemeClasses.primary} rounded-lg relative`}>
               {renderEthereumSwapInterface()}
