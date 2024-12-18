@@ -1029,14 +1029,24 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       const response = await fetch('https://token.jup.ag/strict');
       const tokens = await response.json();
       
-      // Add native SOL to the list
-      const tokensList = [{
-        address: '11111111111111111111111111111111',
-        symbol: 'SOL',
-        name: 'Solana',
-        decimals: 9,
-        logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'
-      }, ...tokens];
+      // Add custom TSUKA token and native SOL to the list
+      const tokensList = [
+        {
+          address: '11111111111111111111111111111111',
+          symbol: 'SOL',
+          name: 'Solana',
+          decimals: 9,
+          logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'
+        },
+        {
+          address: '4eAw7Z8J6J5DyucnjAnz9gS2sn2TThPY63Z6PTi9R5L9',
+          symbol: 'TSUKA',
+          name: 'TSUKA',
+          decimals: 9,
+          logoURI: '/tsuka-logo.png'
+        },
+        ...tokens
+      ];
 
       // Set the state
       setSolanaTokens(tokensList);
