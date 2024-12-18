@@ -2325,7 +2325,20 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           const solanaTokensList = await fetchSolanaTokens();
           console.log('Fetched Solana tokens:', solanaTokensList.length);
           setSolanaTokens(solanaTokensList);
-          setTokens(solanaTokensList); // Solana tokens don't need transformation
+          setTokens(solanaTokensList);
+
+          // Set default SOL-TSUKA pair for Solana
+          const defaultSol = solanaTokensList.find(
+            token => token.address === '11111111111111111111111111111111'
+          );
+          const defaultTsuka = solanaTokensList.find(
+            token => token.address === '4eAw7Z8J6J5DyucnjAnz9gS2sn2TThPY63Z6PTi9R5L9'
+          );
+
+          if (defaultSol && defaultTsuka) {
+            setSellToken(defaultSol);
+            setBuyToken(defaultTsuka);
+          }
         } else {
           console.log('Fetching EVM tokens...');
           const fetchedTokens = await fetchTokenList(chainId);
@@ -2343,6 +2356,19 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           }));
 
           setTokens(transformedTokens);
+
+          // Set default USDC-TSUKA pair for Ethereum
+          const defaultUSDC = transformedTokens.find(
+            token => token.address.toLowerCase() === DEFAULT_USDC_ADDRESS.toLowerCase()
+          );
+          const defaultTSUKA = transformedTokens.find(
+            token => token.address.toLowerCase() === DEFAULT_TSUKA_ADDRESS.toLowerCase()
+          );
+
+          if (defaultUSDC && defaultTSUKA) {
+            setSellToken(defaultUSDC);
+            setBuyToken(defaultTSUKA);
+          }
         }
       } catch (error) {
         console.error('Error fetching tokens:', error);
