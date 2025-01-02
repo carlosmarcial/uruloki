@@ -321,6 +321,23 @@ const useSolanaTokenBalance = (
   return balance;
 };
 
+// Add these near the top of the file after imports
+const ALCHEMY_RPC_URL = `https://eth-mainnet.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY}`;
+
+// Update the chain configuration
+const ethereumChainConfig = {
+  ...mainnet,
+  rpcUrls: {
+    ...mainnet.rpcUrls,
+    default: {
+      http: [ALCHEMY_RPC_URL],
+    },
+    public: {
+      http: [ALCHEMY_RPC_URL],
+    },
+  },
+};
+
 export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
   activeChain: 'ethereum' | 'solana';
   setActiveChain: (chain: 'ethereum' | 'solana') => void;
@@ -1866,52 +1883,86 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       // First check if we need to approve tokens for Permit2
       if (sellToken.address.toLowerCase() !== ETH_ADDRESS.toLowerCase()) {
         try {
-          const currentAllowance = await publicClient.readContract({
-            address: sellToken.address as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'allowance',
-            args: [
-              address as `0x${string}`, 
-              PERMIT2_ADDRESS as `0x${string}`
-            ]
-          }) as bigint;
+          // Validate addresses before making contract calls
+          const tokenAddress = sellToken.address as `0x${string}`;
+          const ownerAddress = address as `0x${string}`;
+          const spenderAddress = PERMIT2_ADDRESS as `0x${string}`;
 
-          const sellAmountBigInt = BigInt(sellAmountInBaseUnits);
-          
-          if (currentAllowance < sellAmountBigInt) {
-            console.log('Approving Permit2...');
-            const { request } = await publicClient.simulateContract({
-              address: sellToken.address as `0x${string}`,
+          // Validate the contract exists
+          const code = await publicClient.getBytecode({ address: tokenAddress });
+          if (!code) {
+            throw new Error('Token contract not found');
+          }
+
+          console.log('Checking allowance for:', {
+            token: sellToken.symbol,
+            tokenAddress,
+            owner: ownerAddress,
+            spender: spenderAddress
+          });
+
+          // Use try-catch specifically for the allowance call
+          let currentAllowance: bigint;
+          try {
+            const result = await publicClient.readContract({
+              address: tokenAddress,
               abi: ERC20_ABI,
-              functionName: 'approve',
-              args: [PERMIT2_ADDRESS as `0x${string}`, MAX_ALLOWANCE],
-              account: address,
-            });
+              functionName: 'allowance',
+              args: [ownerAddress, spenderAddress]
+            }) as bigint; // Assert the type as bigint since we know the return type of allowance
 
-            // Send the transaction
-            await writeContract(request);
+            currentAllowance = result;
+            console.log('Current allowance:', currentAllowance.toString());
 
-            // Wait for the transaction hash from the hook data
-            if (!approveData) {
-              throw new Error('No transaction hash received');
+            const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
+            console.log('Required amount:', sellAmountBigInt.toString());
+
+            if (currentAllowance < sellAmountBigInt) {
+              console.log('Insufficient allowance, requesting approval...');
+              
+              // Simulate the approval transaction first
+              const { request } = await publicClient.simulateContract({
+                address: tokenAddress,
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [spenderAddress, MAX_ALLOWANCE],
+                account: ownerAddress
+              });
+
+              // Send the approval transaction
+              const txHash = await writeContract(request);
+              if (typeof txHash !== 'string') {
+                throw new Error('No transaction hash received for approval');
+              }
+
+              console.log('Approval transaction sent:', txHash);
+
+              // Wait for confirmation with proper error handling
+              const receipt = await publicClient.waitForTransactionReceipt({
+                hash: txHash as `0x${string}`,
+                confirmations: 1,
+                timeout: 60_000 // 60 second timeout
+              });
+
+              if (receipt.status === 'reverted') {
+                throw new Error('Approval transaction reverted');
+              }
+
+              console.log('Approval confirmed:', receipt);
+              
+              // Add a small delay to ensure blockchain state is updated
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+              console.log('Sufficient allowance exists');
             }
-
-            // Wait for confirmation
-            const receipt = await publicClient.waitForTransactionReceipt({
-              hash: approveData,
-              confirmations: 1
-            });
-
-            if (receipt.status === 'reverted') {
-              throw new Error('Transaction reverted');
-            }
-
-            console.log('Permit2 approved');
+          } catch (error) {
+            console.error('Error reading allowance:', error);
+            throw new Error(`Failed to read token allowance: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         } catch (error) {
-          console.error('Error checking/setting allowance:', error);
-          setEthTransactionStatus('error');
-          return;
+          console.error('Error in approval process:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          throw new Error(`Failed to handle token approval: ${errorMessage}`);
         }
       }
 
@@ -2636,23 +2687,43 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
           throw new Error('Public client is not available');
         }
 
-        const currentAllowance = BigInt(await publicClient.readContract({
-          address: sellToken.address as `0x${string}`,
-          abi: ERC20_ABI,
-          functionName: 'allowance',
-          args: [address as `0x${string}`, allowanceTarget as `0x${string}`],
-        }).toString());
+        try {
+          // Validate addresses
+          const tokenAddress = sellToken.address as `0x${string}`;
+          const ownerAddress = address as `0x${string}`;
+          const spenderAddress = allowanceTarget as `0x${string}`;
 
-        const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
-        if (currentAllowance < sellAmountBigInt) {
-          setNeedsAllowance(true);
-          setAllowanceTarget(allowanceTarget);
-          console.log('Token approval needed:', {
-            currentAllowance: currentAllowance.toString(),
-            requiredAmount: sellAmountBigInt.toString(),
-            allowanceTarget
-          });
-          return;
+          // Check if contract exists
+          const code = await publicClient.getBytecode({ address: tokenAddress });
+          if (!code) {
+            throw new Error('Token contract not found');
+          }
+
+          // Read allowance with proper error handling
+          const result = await publicClient.readContract({
+            address: tokenAddress,
+            abi: ERC20_ABI,
+            functionName: 'allowance',
+            args: [ownerAddress, spenderAddress]
+          }) as bigint; // Assert the type as bigint since we know the return type of allowance
+
+          const currentAllowance = result;
+          console.log('Current allowance:', currentAllowance.toString());
+
+          const sellAmountBigInt = parseUnits(sellAmount, sellToken.decimals);
+          if (currentAllowance < sellAmountBigInt) {
+            setNeedsAllowance(true);
+            setAllowanceTarget(allowanceTarget);
+            console.log('Token approval needed:', {
+              currentAllowance: currentAllowance.toString(),
+              requiredAmount: sellAmountBigInt.toString(),
+              allowanceTarget
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('Error checking allowance:', error);
+          throw new Error(`Failed to check token allowance: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
 
