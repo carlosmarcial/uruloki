@@ -91,6 +91,17 @@ import CustomConnectButton from '@/app/components/CustomConnectButton';
 const DEFAULT_USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'; // USDC on Ethereum
 const DEFAULT_TSUKA_ADDRESS = '0xc5fB36dd2fb59d3B98dEfF88425a3F425Ee469eD'; // TSUKA on Ethereum
 
+// Add TSUKA Solana token constant
+const SOLANA_TSUKA_TOKEN = {
+  address: '4eAw7Z8J6J5DyucnjAnz9gS2sn2TThPY63Z6PTi9R5L9', // TSUKA token address on Solana
+  symbol: 'TSUKA',
+  name: 'TSUKA',
+  decimals: 9,
+  logoURI: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xc5fB36dd2fb59d3B98dEfF88425a3F425Ee469eD/logo.png',
+  chainId: 0, // Use 0 for Solana
+  _timestamp: Date.now()
+};
+
 // Then update the TokenData interface
 interface TokenData {
   address: `0x${string}` | string; // Allow both Ethereum and Solana addresses
@@ -1040,20 +1051,26 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     fetchTokensForChain();
   }, [fetchTokensForChain, chainId]);
 
-  // Update the fetchSolanaTokens function to return the tokens
+  // Update the fetchSolanaTokens function to include TSUKA
   const fetchSolanaTokens = useCallback(async () => {
     try {
       const response = await fetch('https://token.jup.ag/strict');
       const tokens = await response.json();
       
-      // Add native SOL to the list
-      const tokensList = [{
-        address: '11111111111111111111111111111111',
-        symbol: 'SOL',
-        name: 'Solana',
-        decimals: 9,
-        logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'
-      }, ...tokens];
+      // Add native SOL and TSUKA to the list
+      const tokensList = [
+        {
+          address: '11111111111111111111111111111111',
+          symbol: 'SOL',
+          name: 'Solana',
+          decimals: 9,
+          logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+          chainId: 0,
+          _timestamp: Date.now()
+        },
+        SOLANA_TSUKA_TOKEN, // Add TSUKA token
+        ...tokens
+      ];
 
       // Set the state
       setSolanaTokens(tokensList);
@@ -1062,7 +1079,19 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
       return tokensList;
     } catch (error) {
       console.error('Error fetching Solana tokens:', error);
-      return [];
+      // Even if the fetch fails, return at least SOL and TSUKA
+      return [
+        {
+          address: '11111111111111111111111111111111',
+          symbol: 'SOL',
+          name: 'Solana',
+          decimals: 9,
+          logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+          chainId: 0,
+          _timestamp: Date.now()
+        },
+        SOLANA_TSUKA_TOKEN
+      ];
     }
   }, []);
 
@@ -2992,10 +3021,23 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
             setBuyToken(defaultTSUKA);
           }
         } else {
-          // Existing Solana token loading logic
+          // Solana token loading logic
           const solanaTokensList = await fetchSolanaTokens();
           setSolanaTokens(solanaTokensList);
           setTokens(solanaTokensList);
+
+          // Set default tokens for Solana
+          const defaultSOL = solanaTokensList.find(
+            token => token.address === '11111111111111111111111111111111'
+          );
+          const defaultTSUKA = solanaTokensList.find(
+            token => token.address === '4eAw7Z8J6J5DyucnjAnz9gS2sn2TThPY63Z6PTi9R5L9'
+          );
+
+          if (defaultSOL && defaultTSUKA) {
+            setSellToken(defaultSOL);
+            setBuyToken(defaultTSUKA);
+          }
         }
       } catch (error) {
         console.error('Error fetching tokens:', error);
@@ -3006,7 +3048,7 @@ export default function UnifiedSwapInterface({ activeChain, setActiveChain }: {
     };
 
     loadTokens();
-  }, [chainId, activeChain]);
+  }, [activeChain, chainId, fetchSolanaTokens]);
 
   return (
     <div className="flex flex-col w-full max-w-[1400px] mx-auto justify-center">

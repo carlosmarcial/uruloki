@@ -208,6 +208,13 @@ export const SOLANA_TOKENS: SolanaToken[] = [
     decimals: 9,
     logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
   },
+  {
+    address: '4eAw7Z8J6J5DyucnjAnz9gS2sn2TThPY63Z6PTi9R5L9',
+    symbol: 'TSUKA',
+    name: 'TSUKA',
+    decimals: 9,
+    logoURI: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xc5fB36dd2fb59d3B98dEfF88425a3F425Ee469eD/logo.png',
+  },
   // Add more Solana tokens as needed
 ];
 
